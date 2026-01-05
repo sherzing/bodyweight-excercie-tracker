@@ -1,10 +1,11 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service for audio and haptic feedback during workouts.
 ///
 /// Provides multi-modal feedback for accessibility:
-/// - Audio sounds for rep completion, invalid reps, and countdown
+/// - Distinct audio sounds for rep completion, invalid reps, countdown, etc.
 /// - Haptic feedback for rep events
 ///
 /// All feedback can be toggled via settings.
@@ -15,6 +16,14 @@ class FeedbackService {
   bool _audioEnabled = true;
   bool _hapticEnabled = true;
   bool _initialized = false;
+
+  // Audio players for different sounds
+  final AudioPlayer _repCompletePlayer = AudioPlayer();
+  final AudioPlayer _invalidRepPlayer = AudioPlayer();
+  final AudioPlayer _countdownPlayer = AudioPlayer();
+  final AudioPlayer _workoutStartPlayer = AudioPlayer();
+  final AudioPlayer _workoutCompletePlayer = AudioPlayer();
+  final AudioPlayer _goalReachedPlayer = AudioPlayer();
 
   // Singleton pattern
   static final FeedbackService _instance = FeedbackService._internal();
@@ -28,7 +37,25 @@ class FeedbackService {
     final prefs = await SharedPreferences.getInstance();
     _audioEnabled = prefs.getBool(_audioEnabledKey) ?? true;
     _hapticEnabled = prefs.getBool(_hapticEnabledKey) ?? true;
+
+    // Pre-load audio sources for faster playback
+    await _preloadAudio();
+
     _initialized = true;
+  }
+
+  /// Pre-load audio files for instant playback
+  Future<void> _preloadAudio() async {
+    try {
+      await _repCompletePlayer.setSource(AssetSource('audio/rep_complete.wav'));
+      await _invalidRepPlayer.setSource(AssetSource('audio/invalid_rep.wav'));
+      await _countdownPlayer.setSource(AssetSource('audio/countdown.wav'));
+      await _workoutStartPlayer.setSource(AssetSource('audio/workout_start.wav'));
+      await _workoutCompletePlayer.setSource(AssetSource('audio/workout_complete.wav'));
+      await _goalReachedPlayer.setSource(AssetSource('audio/goal_reached.wav'));
+    } catch (e) {
+      // Audio files may not be available, fallback to system sounds
+    }
   }
 
   /// Whether audio feedback is enabled
@@ -57,7 +84,7 @@ class FeedbackService {
       HapticFeedback.lightImpact();
     }
     if (_audioEnabled) {
-      _playSystemSound(SystemSoundType.click);
+      _playSound(_repCompletePlayer);
     }
   }
 
@@ -66,8 +93,9 @@ class FeedbackService {
     if (_hapticEnabled) {
       HapticFeedback.heavyImpact();
     }
-    // Note: For invalid reps we use haptic only to differentiate from valid reps
-    // A more negative sound could be added with audioplayers if sound assets are available
+    if (_audioEnabled) {
+      _playSound(_invalidRepPlayer);
+    }
   }
 
   /// Play countdown tick feedback
@@ -76,7 +104,7 @@ class FeedbackService {
       HapticFeedback.selectionClick();
     }
     if (_audioEnabled) {
-      _playSystemSound(SystemSoundType.click);
+      _playSound(_countdownPlayer);
     }
   }
 
@@ -86,7 +114,7 @@ class FeedbackService {
       HapticFeedback.mediumImpact();
     }
     if (_audioEnabled) {
-      _playSystemSound(SystemSoundType.click);
+      _playSound(_workoutStartPlayer);
     }
   }
 
@@ -100,8 +128,7 @@ class FeedbackService {
       });
     }
     if (_audioEnabled) {
-      // Play completion sound
-      _playSystemSound(SystemSoundType.click);
+      _playSound(_workoutCompletePlayer);
     }
   }
 
@@ -116,6 +143,9 @@ class FeedbackService {
       Future.delayed(const Duration(milliseconds: 200), () {
         HapticFeedback.heavyImpact();
       });
+    }
+    if (_audioEnabled) {
+      _playSound(_goalReachedPlayer);
     }
   }
 
@@ -132,18 +162,29 @@ class FeedbackService {
       HapticFeedback.selectionClick();
     }
     if (_audioEnabled) {
-      _playSystemSound(SystemSoundType.click);
+      _playSound(_countdownPlayer);
     }
   }
 
-  /// Play system sound using Flutter's built-in method
-  void _playSystemSound(SystemSoundType type) {
-    SystemSound.play(type);
+  /// Play a sound using the given audio player
+  Future<void> _playSound(AudioPlayer player) async {
+    try {
+      await player.stop();
+      await player.resume();
+    } catch (e) {
+      // Fallback to system sound if audio player fails
+      SystemSound.play(SystemSoundType.click);
+    }
   }
 
   /// Dispose of resources
   void dispose() {
-    // No cleanup needed for system sounds
+    _repCompletePlayer.dispose();
+    _invalidRepPlayer.dispose();
+    _countdownPlayer.dispose();
+    _workoutStartPlayer.dispose();
+    _workoutCompletePlayer.dispose();
+    _goalReachedPlayer.dispose();
   }
 }
 

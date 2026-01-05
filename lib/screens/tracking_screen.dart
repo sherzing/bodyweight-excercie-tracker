@@ -8,6 +8,8 @@ import '../services/database_service.dart';
 import '../services/feedback_service.dart';
 import '../services/pose_detection_service.dart';
 import '../widgets/pose_painter.dart';
+import '../widgets/rep_flash_overlay.dart';
+import '../widgets/celebration_overlay.dart';
 
 class TrackingScreen extends StatefulWidget {
   const TrackingScreen({super.key});
@@ -21,6 +23,7 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   final PoseDetectionService _poseService = PoseDetectionService();
   final DatabaseService _db = DatabaseService();
   final FeedbackService _feedback = FeedbackService();
+  final GlobalKey<RepFlashOverlayState> _flashKey = GlobalKey();
   bool _isInitializing = true;
   String? _errorMessage;
   bool _workoutSaved = false;
@@ -73,9 +76,11 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
         // Set up feedback callbacks
         workoutManager.onRepCompleted = () {
           _feedback.onRepCompleted();
+          _flashKey.currentState?.flashValid();
         };
         workoutManager.onInvalidRep = () {
           _feedback.onInvalidRep();
+          _flashKey.currentState?.flashInvalid();
         };
         workoutManager.onWorkoutCompleted = () {
           _feedback.onWorkoutCompleted();
@@ -128,7 +133,10 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
       child: Scaffold(
         backgroundColor: Colors.black,
         body: SafeArea(
-          child: _buildBody(),
+          child: RepFlashOverlay(
+            key: _flashKey,
+            child: _buildBody(),
+          ),
         ),
       ),
     );
@@ -377,45 +385,50 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
     // Save workout when completion overlay is shown
     _saveWorkout(workoutManager);
 
-    return Container(
-      color: Colors.black87,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.check_circle,
-                color: Colors.green,
-                size: 80,
+    return Stack(
+      children: [
+        Container(
+          color: Colors.black87,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
+                    size: 80,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Workout Complete!',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildStatCard('Reps Completed', '${workoutManager.repCount}'),
+                  if (workoutManager.invalidRepCount > 0)
+                    _buildStatCard('Invalid Reps', '${workoutManager.invalidRepCount}'),
+                  _buildStatCard('Duration', _formatDuration(workoutManager.elapsedSeconds)),
+                  const SizedBox(height: 32),
+                  FilledButton(
+                    onPressed: () {
+                      workoutManager.reset();
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('Done'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Workout Complete!',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 24),
-              _buildStatCard('Reps Completed', '${workoutManager.repCount}'),
-              if (workoutManager.invalidRepCount > 0)
-                _buildStatCard('Invalid Reps', '${workoutManager.invalidRepCount}'),
-              _buildStatCard('Duration', _formatDuration(workoutManager.elapsedSeconds)),
-              const SizedBox(height: 32),
-              FilledButton(
-                onPressed: () {
-                  workoutManager.reset();
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Done'),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        const CelebrationOverlay(),
+      ],
     );
   }
 

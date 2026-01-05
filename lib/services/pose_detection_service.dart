@@ -121,6 +121,19 @@ class PoseDetectionService {
 
     final landmarks = pose.landmarks;
 
+    // Check for low confidence (poor lighting or detection issues)
+    int lowConfidenceCount = 0;
+    const minConfidence = 0.5;
+    for (final landmark in landmarks.values) {
+      if (landmark.likelihood < minConfidence) {
+        lowConfidenceCount++;
+      }
+    }
+    // If more than half the landmarks have low confidence
+    if (lowConfidenceCount > landmarks.length / 2) {
+      return PosePositionFeedback.lowConfidence;
+    }
+
     // Calculate body bounds
     double minX = double.infinity;
     double maxX = double.negativeInfinity;
@@ -170,6 +183,7 @@ enum PosePositionFeedback {
   tooFar,
   moveToCenter,
   noPoseDetected,
+  lowConfidence,
 }
 
 extension PosePositionFeedbackMessage on PosePositionFeedback {
@@ -185,6 +199,25 @@ extension PosePositionFeedbackMessage on PosePositionFeedback {
         return 'Move to center of frame';
       case PosePositionFeedback.noPoseDetected:
         return 'Position yourself in frame';
+      case PosePositionFeedback.lowConfidence:
+        return 'Improve lighting conditions';
+    }
+  }
+
+  String get icon {
+    switch (this) {
+      case PosePositionFeedback.good:
+        return '';
+      case PosePositionFeedback.tooClose:
+        return 'arrow_back';
+      case PosePositionFeedback.tooFar:
+        return 'arrow_forward';
+      case PosePositionFeedback.moveToCenter:
+        return 'center_focus_strong';
+      case PosePositionFeedback.noPoseDetected:
+        return 'person_search';
+      case PosePositionFeedback.lowConfidence:
+        return 'lightbulb';
     }
   }
 }

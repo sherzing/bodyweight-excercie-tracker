@@ -1,30 +1,121 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:pushup_counter/main.dart';
+import 'package:provider/provider.dart';
+import 'package:pushup_counter/providers/workout_manager.dart';
+import 'package:pushup_counter/screens/selection_screen.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('SelectionScreen', () {
+    testWidgets('displays workout setup title', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      expect(find.text('Workout Setup'), findsOneWidget);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    testWidgets('displays exercise selection', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(find.text('Exercise'), findsOneWidget);
+      expect(find.text('Pushups'), findsOneWidget);
+      expect(find.text('Burpees'), findsOneWidget);
+    });
+
+    testWidgets('displays mode selection', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
+
+      expect(find.text('Mode'), findsOneWidget);
+      expect(find.text('Timer'), findsOneWidget);
+      expect(find.text('Rep Goal'), findsOneWidget);
+      expect(find.text('Free'), findsOneWidget);
+    });
+
+    testWidgets('displays start button', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
+
+      expect(find.text('Start Workout'), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+    });
+
+    testWidgets('shows target value selector when timer mode selected',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
+
+      // Select Timer mode
+      await tester.tap(find.text('Timer'));
+      await tester.pumpAndSettle();
+
+      // Should show duration selector
+      expect(find.text('Duration (seconds)'), findsOneWidget);
+    });
+
+    testWidgets('shows target value selector when rep goal mode selected',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
+
+      // Select Rep Goal mode
+      await tester.tap(find.text('Rep Goal'));
+      await tester.pumpAndSettle();
+
+      // Should show reps selector
+      expect(find.text('Target Reps'), findsOneWidget);
+    });
+
+    testWidgets('hides target value selector in free mode',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => WorkoutManager(),
+          child: const MaterialApp(
+            home: SelectionScreen(),
+          ),
+        ),
+      );
+
+      // Free mode is default, should not show target selectors
+      expect(find.text('Duration (seconds)'), findsNothing);
+      expect(find.text('Target Reps'), findsNothing);
+    });
   });
 }

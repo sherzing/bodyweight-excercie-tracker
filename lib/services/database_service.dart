@@ -171,6 +171,102 @@ class DatabaseService {
     await db.close();
     _database = null;
   }
+
+  /// Get statistics for a specific date range
+  Future<WorkoutStats> getStatsByDateRange(DateTime start, DateTime end) async {
+    final db = await database;
+
+    // Total workouts in range
+    final countResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM $_tableName WHERE started_at >= ? AND started_at <= ?',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    final totalWorkouts = Sqflite.firstIntValue(countResult) ?? 0;
+
+    // Total reps in range
+    final repsResult = await db.rawQuery(
+      'SELECT SUM(reps_completed) as total FROM $_tableName WHERE started_at >= ? AND started_at <= ?',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    final totalReps = Sqflite.firstIntValue(repsResult) ?? 0;
+
+    // Total duration in range
+    final durationResult = await db.rawQuery(
+      'SELECT SUM(duration_seconds) as total FROM $_tableName WHERE started_at >= ? AND started_at <= ?',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    final totalSeconds = Sqflite.firstIntValue(durationResult) ?? 0;
+
+    // Personal bests in range by exercise type
+    final personalBests = <ExerciseType, int>{};
+    for (final type in ExerciseType.values) {
+      final pbResult = await db.rawQuery(
+        'SELECT MAX(reps_completed) as max FROM $_tableName WHERE exercise_type = ? AND started_at >= ? AND started_at <= ?',
+        [type.name, start.toIso8601String(), end.toIso8601String()],
+      );
+      final pb = Sqflite.firstIntValue(pbResult);
+      if (pb != null && pb > 0) {
+        personalBests[type] = pb;
+      }
+    }
+
+    return WorkoutStats(
+      totalWorkouts: totalWorkouts,
+      totalReps: totalReps,
+      totalDurationSeconds: totalSeconds,
+      personalBests: personalBests,
+    );
+  }
+
+  /// Get this week's statistics (Monday to Sunday)
+  Future<WorkoutStats> getThisWeekStats() async {
+    final now = DateTime.now();
+    final weekday = now.weekday;
+    final startOfWeek = DateTime(now.year, now.month, now.day - (weekday - 1));
+    final endOfWeek = startOfWeek.add(const Duration(days: 7));
+    return getStatsByDateRange(startOfWeek, endOfWeek);
+  }
+
+  /// Get this month's statistics
+  Future<WorkoutStats> getThisMonthStats() async {
+    final now = DateTime.now();
+    final startOfMonth = DateTime(now.year, now.month, 1);
+    final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    return getStatsByDateRange(startOfMonth, endOfMonth);
+  }
+
+  /// Export all workouts as CSV string
+  Future<String> exportToCsv() async {
+    final workouts = await getAllWorkouts();
+
+    final buffer = StringBuffer();
+
+    // CSV header
+    buffer.writeln(
+      'Date,Time,Exercise,Variant,Mode,Target,Reps Completed,Invalid Reps,Duration (s),Completed',
+    );
+
+    // CSV rows
+    for (final workout in workouts) {
+      final date = '${workout.startedAt.year}-${workout.startedAt.month.toString().padLeft(2, '0')}-${workout.startedAt.day.toString().padLeft(2, '0')}';
+      final time = '${workout.startedAt.hour.toString().padLeft(2, '0')}:${workout.startedAt.minute.toString().padLeft(2, '0')}';
+
+      buffer.writeln([
+        date,
+        time,
+        workout.exerciseType.name,
+        workout.variant.name,
+        workout.mode.name,
+        workout.targetValue ?? '',
+        workout.repsCompleted,
+        workout.repsInvalid,
+        workout.durationSeconds,
+        workout.wasCompleted ? 'Yes' : 'No',
+      ].join(','));
+    }
+
+    return buffer.toString();
+  }
 }
 
 /// Statistics about workouts

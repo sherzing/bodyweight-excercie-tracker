@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/workout.dart';
 import '../providers/workout_manager.dart';
+import '../services/permission_service.dart';
 import 'tracking_screen.dart';
 
 class SelectionScreen extends StatefulWidget {
@@ -194,7 +195,25 @@ class _SelectionScreenState extends State<SelectionScreen> {
     );
   }
 
-  void _startWorkout() {
+  Future<void> _startWorkout() async {
+    final permissionService = PermissionService();
+
+    // Check and request camera permission
+    final hasPermission = await permissionService.requestCameraPermission(context);
+
+    if (!hasPermission) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Camera permission is required to track exercises'),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
     // Configure the workout manager
     final workoutManager = context.read<WorkoutManager>();
     workoutManager.configure(

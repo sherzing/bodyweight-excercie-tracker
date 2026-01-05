@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/workout.dart';
 import '../services/database_service.dart';
 
@@ -14,8 +15,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final DatabaseService _db = DatabaseService();
   List<Workout> _workouts = [];
   WorkoutStats? _stats;
+  WorkoutStats? _weekStats;
+  WorkoutStats? _monthStats;
   bool _isLoading = true;
   ExerciseType? _filterType;
+  int _selectedStatsPeriod = 0; // 0 = All time, 1 = This Week, 2 = This Month
 
   @override
   void initState() {
@@ -31,10 +35,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ? await _db.getAllWorkouts()
           : await _db.getWorkoutsByExercise(_filterType!);
       final stats = await _db.getStats();
+      final weekStats = await _db.getThisWeekStats();
+      final monthStats = await _db.getThisMonthStats();
 
       setState(() {
         _workouts = workouts;
         _stats = stats;
+        _weekStats = weekStats;
+        _monthStats = monthStats;
         _isLoading = false;
       });
     } catch (e) {
@@ -47,12 +55,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  Future<void> _exportData() async {
+    try {
+      final csv = await _db.exportToCsv();
+      await Share.share(
+        csv,
+        subject: 'Workout History Export',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error exporting data: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Workout History'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download),
+            tooltip: 'Export Data',
+            onPressed: _workouts.isEmpty ? null : _exportData,
+          ),
           PopupMenuButton<ExerciseType?>(
             icon: const Icon(Icons.filter_list),
             onSelected: (type) {
@@ -93,7 +122,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  WorkoutStats? get _currentStats {
+    switch (_selectedStatsPeriod) {
+      case 1:
+        return _weekStats;
+      case 2:
+        return _monthStats;
+      default:
+        return _stats;
+    }
+  }
+
+  String get _currentStatsLabel {
+    switch (_selectedStatsPeriod) {
+      case 1:
+        return 'This Week';
+      case 2:
+        return 'This Month';
+      default:
+        return 'All Time';
+    }
+  }
+
   Widget _buildStatsHeader() {
+    final stats = _currentStats;
+    if (stats == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
+
     return SliverToBoxAdapter(
       child: Container(
         margin: const EdgeInsets.all(16),
@@ -105,11 +159,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Statistics',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Statistics',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('All')),
+                    ButtonSegment(value: 1, label: Text('Week')),
+                    ButtonSegment(value: 2, label: Text('Month')),
+                  ],
+                  selected: {_selectedStatsPeriod},
+                  onSelectionChanged: (selection) {
+                    setState(() => _selectedStatsPeriod = selection.first);
+                  },
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: WidgetStateProperty.all(
+                      const TextStyle(fontSize: 12),
+                    ),
                   ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Row(
@@ -117,34 +193,34 @@ class _HistoryScreenState extends State<HistoryScreen> {
               children: [
                 _buildStatItem(
                   'Workouts',
-                  '${_stats!.totalWorkouts}',
+                  '${stats.totalWorkouts}',
                   Icons.fitness_center,
                 ),
                 _buildStatItem(
                   'Total Reps',
-                  '${_stats!.totalReps}',
+                  '${stats.totalReps}',
                   Icons.repeat,
                 ),
                 _buildStatItem(
                   'Time',
-                  _stats!.formattedDuration,
+                  stats.formattedDuration,
                   Icons.timer,
                 ),
               ],
             ),
-            if (_stats!.personalBests.isNotEmpty) ...[
+            if (stats.personalBests.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 8),
               Text(
-                'Personal Bests',
+                'Best in $_currentStatsLabel',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _stats!.personalBests.entries.map((entry) {
+                children: stats.personalBests.entries.map((entry) {
                   return Chip(
                     avatar: const Icon(Icons.emoji_events, size: 18),
                     label: Text('${entry.key.displayName}: ${entry.value}'),

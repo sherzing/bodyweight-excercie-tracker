@@ -4,6 +4,7 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../models/workout.dart';
 import '../models/exercise_counter.dart';
 import '../models/pushup_counter.dart';
+import '../models/burpee_counter.dart';
 import '../services/pose_detection_service.dart';
 
 /// Central state manager for workout sessions.
@@ -76,8 +77,9 @@ class WorkoutManager extends ChangeNotifier {
       case ExerciseType.pushups:
         return PushupCounter();
       case ExerciseType.burpees:
-        // TODO: Implement BurpeeCounter
-        return PushupCounter(); // Placeholder
+        return BurpeeCounter(
+          isModifiedVariant: _variant == ExerciseVariant.modified,
+        );
     }
   }
 

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/workout.dart';
 import '../providers/workout_manager.dart';
 import '../services/camera_service.dart';
+import '../services/database_service.dart';
+import '../services/feedback_service.dart';
 import '../services/pose_detection_service.dart';
 import '../widgets/pose_painter.dart';
 
@@ -17,8 +19,12 @@ class TrackingScreen extends StatefulWidget {
 class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObserver {
   final CameraService _cameraService = CameraService();
   final PoseDetectionService _poseService = PoseDetectionService();
+  final DatabaseService _db = DatabaseService();
+  final FeedbackService _feedback = FeedbackService();
   bool _isInitializing = true;
   String? _errorMessage;
+  bool _workoutSaved = false;
+  int _lastCountdown = 0;
 
   @override
   void initState() {
@@ -62,7 +68,20 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
 
       // Start workout after camera is ready
       if (mounted) {
-        context.read<WorkoutManager>().startWorkout();
+        final workoutManager = context.read<WorkoutManager>();
+
+        // Set up feedback callbacks
+        workoutManager.onRepCompleted = () {
+          _feedback.onRepCompleted();
+        };
+        workoutManager.onInvalidRep = () {
+          _feedback.onInvalidRep();
+        };
+        workoutManager.onWorkoutCompleted = () {
+          _feedback.onWorkoutCompleted();
+        };
+
+        workoutManager.startWorkout();
       }
     } catch (e) {
       setState(() {
@@ -228,6 +247,16 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   }
 
   Widget _buildCountdownOverlay(WorkoutManager workoutManager) {
+    // Trigger countdown feedback when countdown value changes
+    if (workoutManager.countdownSeconds != _lastCountdown) {
+      _lastCountdown = workoutManager.countdownSeconds;
+      if (_lastCountdown > 0) {
+        _feedback.onCountdownTick();
+      } else {
+        _feedback.onWorkoutStart();
+      }
+    }
+
     return Container(
       color: Colors.black54,
       child: Center(
@@ -345,6 +374,9 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   }
 
   Widget _buildCompletionOverlay(WorkoutManager workoutManager) {
+    // Save workout when completion overlay is shown
+    _saveWorkout(workoutManager);
+
     return Container(
       color: Colors.black87,
       child: Center(
@@ -484,6 +516,27 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
     final minutes = seconds ~/ 60;
     final secs = seconds % 60;
     return '${minutes}m ${secs}s';
+  }
+
+  Future<void> _saveWorkout(WorkoutManager workoutManager) async {
+    if (_workoutSaved) return;
+
+    final workout = Workout(
+      exerciseType: workoutManager.exerciseType,
+      variant: workoutManager.variant,
+      mode: workoutManager.mode,
+      targetValue: workoutManager.targetValue,
+      repsCompleted: workoutManager.repCount,
+      repsInvalid: workoutManager.invalidRepCount,
+      durationSeconds: workoutManager.elapsedSeconds,
+      startedAt: DateTime.now().subtract(
+        Duration(seconds: workoutManager.elapsedSeconds),
+      ),
+      wasCompleted: workoutManager.state == WorkoutState.completed,
+    );
+
+    await _db.insertWorkout(workout);
+    _workoutSaved = true;
   }
 
   void _showExitDialog() {

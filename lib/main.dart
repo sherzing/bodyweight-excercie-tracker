@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/workout_manager.dart';
-import 'screens/selection_screen.dart';
+import 'screens/home_screen.dart';
+import 'services/feedback_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Lock to portrait orientation by default
@@ -12,6 +13,9 @@ void main() {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // Initialize feedback service
+  await FeedbackService().initialize();
 
   runApp(const PushupCounterApp());
 }
@@ -41,7 +45,7 @@ class PushupCounterApp extends StatelessWidget {
           useMaterial3: true,
         ),
         themeMode: ThemeMode.system,
-        home: const SelectionScreen(),
+        home: const HomeScreen(),
       ),
     );
   }

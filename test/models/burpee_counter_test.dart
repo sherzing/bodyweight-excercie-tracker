@@ -178,22 +178,3 @@ List<PoseLandmark> _createSquatPose() {
   ];
 }
 
-/// Create a pushup down pose (elbow angle ≤ 90 degrees)
-List<PoseLandmark> _createPushupDownPose() {
-  // Prone position with bent elbows
-  return [
-    _createLandmark(PoseLandmarkType.leftShoulder, 100, 250),
-    _createLandmark(PoseLandmarkType.rightShoulder, 200, 250),
-    _createLandmark(PoseLandmarkType.leftHip, 100, 280),
-    _createLandmark(PoseLandmarkType.rightHip, 200, 280),
-    _createLandmark(PoseLandmarkType.leftKnee, 100, 400),
-    _createLandmark(PoseLandmarkType.rightKnee, 200, 400),
-    _createLandmark(PoseLandmarkType.leftAnkle, 100, 500),
-    _createLandmark(PoseLandmarkType.rightAnkle, 200, 500),
-    // Elbows bent at 90 degrees
-    _createLandmark(PoseLandmarkType.leftElbow, 50, 280),
-    _createLandmark(PoseLandmarkType.rightElbow, 250, 280),
-    _createLandmark(PoseLandmarkType.leftWrist, 50, 350),
-    _createLandmark(PoseLandmarkType.rightWrist, 250, 350),
-  ];
-}

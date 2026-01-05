@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
-import 'package:pushup_counter/models/exercise_counter.dart';
 import 'package:pushup_counter/models/pushup_counter.dart';
 
 /// Tests for PushupCounter behavior.
@@ -205,8 +204,8 @@ List<PoseLandmark> _createPushupPose({required double elbowAngle}) {
   // We need to position the wrist so that this angle equals elbowAngle
 
   // Vector from elbow to shoulder
-  final toShoulderX = shoulderX - elbowX;
-  final toShoulderY = shoulderY - elbowY;
+  const toShoulderX = shoulderX - elbowX;
+  const toShoulderY = shoulderY - elbowY;
 
   // Angle of shoulder vector from elbow
   final shoulderAngle = math.atan2(toShoulderY, toShoulderX);

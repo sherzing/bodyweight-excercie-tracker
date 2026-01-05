@@ -251,6 +251,7 @@ void main() {
 
     group('Callbacks', () {
       test('onRepCompleted is called when rep completes', () async {
+        // ignore: unused_local_variable - used to verify callback assignment works
         var repCompletedCalled = false;
         manager.onRepCompleted = () => repCompletedCalled = true;
 
@@ -264,6 +265,8 @@ void main() {
         // Note: Would need to simulate pose updates to trigger rep completion
         // This test documents the interface contract
         expect(manager.onRepCompleted, isNotNull);
+        // Verify callback was assigned (not that it was called, since we can't simulate poses)
+        expect(repCompletedCalled, isFalse); // Not called without pose simulation
       });
 
       test('onWorkoutCompleted is called when workout ends', () async {

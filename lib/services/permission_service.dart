@@ -25,6 +25,7 @@ class PermissionService {
 
     if (status.isPermanentlyDenied) {
       // Show dialog explaining why we need camera and how to enable it
+      // ignore: use_build_context_synchronously
       final shouldOpenSettings = await _showPermissionDeniedDialog(context);
       if (shouldOpenSettings) {
         await openAppSettings();

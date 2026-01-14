@@ -15,7 +15,6 @@ import '../widgets/rep_flash_overlay.dart';
 import '../widgets/celebration_overlay.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/guide_lines_overlay.dart';
-import '../widgets/calibration_overlay.dart';
 
 class TrackingScreen extends StatefulWidget {
   const TrackingScreen({super.key});
@@ -40,7 +39,6 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   int _lastCountdown = 0;
   bool _debugMode = false; // Hidden by default, persisted via SharedPreferences
   bool _guideLinesVisible = true; // Visible by default to help new users
-  GuideLineDisplayMode _guideLineDisplayMode = GuideLineDisplayMode.targetPositions;
   String _lastCapturedStage = ''; // Track last stage to avoid duplicate captures
 
   @override
@@ -287,33 +285,22 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
             // Pose overlay
             _buildPoseOverlay(workoutManager),
 
-            // Guide lines overlay (shows up/down position thresholds)
-            if (workoutManager.state == WorkoutState.calibrating ||
-                workoutManager.state == WorkoutState.active ||
+            // Guide lines overlay (shows down position threshold)
+            if (workoutManager.state == WorkoutState.active ||
                 workoutManager.state == WorkoutState.paused)
               GuideLinesOverlay(
                 pose: workoutManager.currentPose,
                 imageSize: _cameraService.controller?.value.previewSize ?? Size.zero,
                 currentStage: workoutManager.currentStage,
                 workoutState: workoutManager.state,
-                workoutManager: workoutManager,
                 isVisible: _guideLinesVisible,
                 isFrontCamera:
                     _cameraService.camera?.lensDirection == CameraLensDirection.front,
-                displayMode: _guideLineDisplayMode,
               ),
 
             // Countdown overlay
             if (workoutManager.state == WorkoutState.countdown)
               _buildCountdownOverlay(workoutManager),
-
-            // Calibration overlay
-            if (workoutManager.state == WorkoutState.calibrating)
-              CalibrationOverlay(
-                repsCompleted: workoutManager.calibrationRepsCompleted,
-                repsTarget: workoutManager.calibrationRepsTarget,
-                onSkip: () => workoutManager.skipCalibration(),
-              ),
 
             // Workout info overlay
             if (workoutManager.state == WorkoutState.active ||

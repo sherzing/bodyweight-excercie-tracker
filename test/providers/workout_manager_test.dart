@@ -126,7 +126,6 @@ void main() {
         manager.configure(
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.free,
-          enableCalibration: false,
         );
         manager.startWorkout();
 
@@ -152,7 +151,6 @@ void main() {
         manager.configure(
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.free,
-          enableCalibration: false,
         );
         manager.startWorkout();
 
@@ -177,7 +175,6 @@ void main() {
         manager.configure(
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.free,
-          enableCalibration: false,
         );
         manager.startWorkout();
 
@@ -194,7 +191,6 @@ void main() {
         manager.configure(
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.free,
-          enableCalibration: false,
         );
         manager.startWorkout();
         await Future.delayed(const Duration(seconds: 4));
@@ -209,7 +205,6 @@ void main() {
         manager.configure(
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.free,
-          enableCalibration: false,
         );
         manager.startWorkout();
         await Future.delayed(const Duration(seconds: 5));
@@ -241,7 +236,6 @@ void main() {
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.repGoal,
           targetValue: 10,
-          enableCalibration: false,
         );
         manager.startWorkout();
         await Future.delayed(const Duration(seconds: 4));
@@ -264,7 +258,6 @@ void main() {
         manager.configure(
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.free,
-          enableCalibration: false,
         );
         manager.startWorkout();
         await Future.delayed(const Duration(seconds: 4));
@@ -284,7 +277,6 @@ void main() {
           exerciseType: ExerciseType.pushups,
           mode: WorkoutMode.timer,
           targetValue: 1, // 1 second timer
-          enableCalibration: false,
         );
         manager.startWorkout();
 

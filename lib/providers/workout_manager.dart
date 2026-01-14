@@ -23,13 +23,6 @@ class WorkoutManager extends ChangeNotifier {
   int _remainingSeconds = 0;
   int _countdownSeconds = 3;
 
-  // Calibration state
-  int _calibrationRepsCompleted = 0;
-  int _calibrationRepsTarget = 2;
-  bool _calibrationEnabled = true;
-  List<double> _calibrationUpPositions = [];
-  List<double> _calibrationDownPositions = [];
-
   // Exercise tracking
   ExerciseCounter? _exerciseCounter;
   Pose? _currentPose;
@@ -43,8 +36,6 @@ class WorkoutManager extends ChangeNotifier {
   VoidCallback? onRepCompleted;
   VoidCallback? onInvalidRep;
   VoidCallback? onWorkoutCompleted;
-  VoidCallback? onCalibrationRepCompleted;
-  VoidCallback? onCalibrationCompleted;
 
   // Getters
   ExerciseType get exerciseType => _exerciseType;
@@ -63,30 +54,17 @@ class WorkoutManager extends ChangeNotifier {
   Map<String, double> get debugAngles => _exerciseCounter?.getDebugAngles() ?? {};
   bool get isValidPose => _exerciseCounter?.isValidPose() ?? false;
 
-  // Calibration getters
-  int get calibrationRepsCompleted => _calibrationRepsCompleted;
-  int get calibrationRepsTarget => _calibrationRepsTarget;
-  bool get calibrationEnabled => _calibrationEnabled;
-  double? get calibratedUpY => _calibrationUpPositions.isEmpty
-      ? null
-      : _calibrationUpPositions.reduce((a, b) => a + b) / _calibrationUpPositions.length;
-  double? get calibratedDownY => _calibrationDownPositions.isEmpty
-      ? null
-      : _calibrationDownPositions.reduce((a, b) => a + b) / _calibrationDownPositions.length;
-
   /// Configure the workout before starting
   void configure({
     required ExerciseType exerciseType,
     ExerciseVariant variant = ExerciseVariant.standard,
     required WorkoutMode mode,
     int targetValue = 0,
-    bool enableCalibration = true,
   }) {
     _exerciseType = exerciseType;
     _variant = variant;
     _mode = mode;
     _targetValue = targetValue;
-    _calibrationEnabled = enableCalibration;
 
     // Create appropriate exercise counter
     _exerciseCounter = _createExerciseCounter();
@@ -126,19 +104,6 @@ class WorkoutManager extends ChangeNotifier {
   }
 
   void _beginWorkout() {
-    // Start calibration phase if enabled
-    if (_calibrationEnabled) {
-      _state = WorkoutState.calibrating;
-      _calibrationRepsCompleted = 0;
-      _calibrationUpPositions = [];
-      _calibrationDownPositions = [];
-      notifyListeners();
-    } else {
-      _startActiveWorkout();
-    }
-  }
-
-  void _startActiveWorkout() {
     _state = WorkoutState.active;
     _startTime = DateTime.now();
     _elapsedSeconds = 0;
@@ -165,42 +130,6 @@ class WorkoutManager extends ChangeNotifier {
 
       notifyListeners();
     });
-  }
-
-  /// Skip calibration and start workout immediately
-  void skipCalibration() {
-    if (_state != WorkoutState.calibrating) return;
-    _startActiveWorkout();
-  }
-
-  /// Record a calibration position (called by GuideLinesOverlay)
-  void recordCalibrationPosition({required bool isUp, required double shoulderY}) {
-    if (_state != WorkoutState.calibrating) return;
-
-    if (isUp) {
-      _calibrationUpPositions.add(shoulderY);
-    } else {
-      _calibrationDownPositions.add(shoulderY);
-    }
-  }
-
-  /// Complete a calibration rep
-  void completeCalibrationRep() {
-    if (_state != WorkoutState.calibrating) return;
-
-    _calibrationRepsCompleted++;
-    onCalibrationRepCompleted?.call();
-    notifyListeners();
-
-    // Check if calibration is complete
-    if (_calibrationRepsCompleted >= _calibrationRepsTarget) {
-      _finishCalibration();
-    }
-  }
-
-  void _finishCalibration() {
-    onCalibrationCompleted?.call();
-    _startActiveWorkout();
   }
 
   /// Pause the workout
@@ -295,10 +224,6 @@ class WorkoutManager extends ChangeNotifier {
     _remainingSeconds = 0;
     _currentPose = null;
     _exerciseCounter?.reset();
-    // Reset calibration state
-    _calibrationRepsCompleted = 0;
-    _calibrationUpPositions = [];
-    _calibrationDownPositions = [];
     notifyListeners();
   }
 

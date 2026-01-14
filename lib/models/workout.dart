@@ -65,11 +65,12 @@ extension WorkoutModeExtension on WorkoutMode {
 
 /// Current state of the workout
 enum WorkoutState {
-  idle,       // Not started
-  countdown,  // 3-2-1 countdown before start
-  active,     // Workout in progress
-  paused,     // Workout paused
-  completed,  // Workout finished (goal reached or timer ended)
+  idle,        // Not started
+  countdown,   // 3-2-1 countdown before start
+  calibrating, // Calibration phase - user does 2 reps to set guide line positions
+  active,      // Workout in progress
+  paused,      // Workout paused
+  completed,   // Workout finished (goal reached or timer ended)
 }
 
 /// Represents a completed workout session

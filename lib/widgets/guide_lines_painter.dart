@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'guide_lines_overlay.dart';
 
 /// Custom painter that draws horizontal guide lines to show pushup position thresholds.
 ///
@@ -23,6 +24,9 @@ class GuideLinesPainter extends CustomPainter {
   /// Flash color when crossing
   final Color flashColor;
 
+  /// Display mode for labels
+  final GuideLineDisplayMode displayMode;
+
   GuideLinesPainter({
     this.upperLineY,
     this.lowerLineY,
@@ -30,6 +34,7 @@ class GuideLinesPainter extends CustomPainter {
     this.lowerLineFlash = false,
     this.lineColor = Colors.green,
     this.flashColor = Colors.yellow,
+    this.displayMode = GuideLineDisplayMode.targetPositions,
   });
 
   @override
@@ -38,6 +43,14 @@ class GuideLinesPainter extends CustomPainter {
     final lineWidth = size.width * 0.67;
     final startX = (size.width - lineWidth) / 2;
     final endX = startX + lineWidth;
+
+    // Get labels based on display mode
+    final upperLabel = displayMode == GuideLineDisplayMode.targetPositions
+        ? 'UP'
+        : 'UP (160°)';
+    final lowerLabel = displayMode == GuideLineDisplayMode.targetPositions
+        ? 'DOWN'
+        : 'DOWN (90°)';
 
     // Draw upper line if position is known
     if (upperLineY != null && upperLineY! > 0 && upperLineY! < size.height) {
@@ -52,8 +65,14 @@ class GuideLinesPainter extends CustomPainter {
         upperPaint,
       );
 
-      // Draw small label
-      _drawLabel(canvas, 'UP', Offset(endX + 8, upperLineY!), upperLineFlash);
+      // Draw small arrows if in target mode
+      if (displayMode == GuideLineDisplayMode.targetPositions) {
+        _drawArrow(canvas, Offset(startX - 8, upperLineY!), true, upperLineFlash);
+        _drawArrow(canvas, Offset(endX + 8, upperLineY!), false, upperLineFlash);
+      }
+
+      // Draw label
+      _drawLabel(canvas, upperLabel, Offset(endX + 12, upperLineY!), upperLineFlash);
     }
 
     // Draw lower line if position is known
@@ -69,9 +88,34 @@ class GuideLinesPainter extends CustomPainter {
         lowerPaint,
       );
 
-      // Draw small label
-      _drawLabel(canvas, 'DOWN', Offset(endX + 8, lowerLineY!), lowerLineFlash);
+      // Draw small arrows if in target mode
+      if (displayMode == GuideLineDisplayMode.targetPositions) {
+        _drawArrow(canvas, Offset(startX - 8, lowerLineY!), true, lowerLineFlash);
+        _drawArrow(canvas, Offset(endX + 8, lowerLineY!), false, lowerLineFlash);
+      }
+
+      // Draw label
+      _drawLabel(canvas, lowerLabel, Offset(endX + 12, lowerLineY!), lowerLineFlash);
     }
+  }
+
+  void _drawArrow(Canvas canvas, Offset position, bool pointRight, bool isFlashing) {
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = isFlashing ? flashColor : lineColor;
+
+    final path = Path();
+    if (pointRight) {
+      path.moveTo(position.dx, position.dy);
+      path.lineTo(position.dx - 6, position.dy - 4);
+      path.lineTo(position.dx - 6, position.dy + 4);
+    } else {
+      path.moveTo(position.dx, position.dy);
+      path.lineTo(position.dx + 6, position.dy - 4);
+      path.lineTo(position.dx + 6, position.dy + 4);
+    }
+    path.close();
+    canvas.drawPath(path, paint);
   }
 
   void _drawLabel(Canvas canvas, String text, Offset position, bool isFlashing) {
@@ -80,7 +124,7 @@ class GuideLinesPainter extends CustomPainter {
         text: text,
         style: TextStyle(
           color: isFlashing ? flashColor : lineColor,
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -98,6 +142,7 @@ class GuideLinesPainter extends CustomPainter {
     return oldDelegate.upperLineY != upperLineY ||
         oldDelegate.lowerLineY != lowerLineY ||
         oldDelegate.upperLineFlash != upperLineFlash ||
-        oldDelegate.lowerLineFlash != lowerLineFlash;
+        oldDelegate.lowerLineFlash != lowerLineFlash ||
+        oldDelegate.displayMode != displayMode;
   }
 }

@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../providers/workout_manager.dart';
 
-/// Debug overlay showing real-time pose detection data
+/// Debug overlay showing real-time pose detection data with slide animation
 class DebugOverlay extends StatelessWidget {
   final WorkoutManager workoutManager;
   final bool isVisible;
+  final bool isExpanded;
 
   const DebugOverlay({
     super.key,
     required this.workoutManager,
     this.isVisible = true,
+    this.isExpanded = false,
   });
 
   @override
@@ -24,38 +26,50 @@ class DebugOverlay extends StatelessWidget {
       top: 180,
       left: 12,
       right: 12,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.85),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: workoutManager.isValidPose ? Colors.green : Colors.red,
-            width: 3,
+      child: AnimatedSlide(
+        offset: isExpanded ? Offset.zero : const Offset(0, -2),
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        child: AnimatedOpacity(
+          opacity: isExpanded ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: !isExpanded,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.85),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: workoutManager.isValidPose ? Colors.green : Colors.red,
+                  width: 3,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 12),
+                  const Divider(color: Colors.white30, height: 1),
+                  const SizedBox(height: 12),
+                  _buildAngleRow('ELBOW', debugAngles['elbow'],
+                      threshold: '≤90 down, ≥160 up',
+                      isGood: _isElbowGood(debugAngles['elbow'])),
+                  _buildAngleRow('L Elbow', debugAngles['leftElbow']),
+                  _buildAngleRow('R Elbow', debugAngles['rightElbow']),
+                  const SizedBox(height: 8),
+                  _buildAngleRow('Body Dev', debugAngles['bodyDeviation'],
+                      threshold: '<30',
+                      isGood: _isBodyAligned(debugAngles['bodyDeviation'])),
+                  const SizedBox(height: 12),
+                  const Divider(color: Colors.white30, height: 1),
+                  const SizedBox(height: 12),
+                  _buildConfidenceSection(pose),
+                ],
+              ),
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 12),
-            const Divider(color: Colors.white30, height: 1),
-            const SizedBox(height: 12),
-            _buildAngleRow('ELBOW', debugAngles['elbow'],
-                threshold: '≤90 down, ≥160 up',
-                isGood: _isElbowGood(debugAngles['elbow'])),
-            _buildAngleRow('L Elbow', debugAngles['leftElbow']),
-            _buildAngleRow('R Elbow', debugAngles['rightElbow']),
-            const SizedBox(height: 8),
-            _buildAngleRow('Body Dev', debugAngles['bodyDeviation'],
-                threshold: '<30',
-                isGood: _isBodyAligned(debugAngles['bodyDeviation'])),
-            const SizedBox(height: 12),
-            const Divider(color: Colors.white30, height: 1),
-            const SizedBox(height: 12),
-            _buildConfidenceSection(pose),
-          ],
         ),
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/workout.dart';
 import '../providers/workout_manager.dart';
 import '../services/camera_service.dart';
@@ -22,6 +23,8 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObserver {
+  static const String _debugModeKey = 'debug_overlay_visible';
+
   final CameraService _cameraService = CameraService();
   final PoseDetectionService _poseService = PoseDetectionService();
   final DatabaseService _db = DatabaseService();
@@ -32,7 +35,7 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   String? _errorMessage;
   bool _workoutSaved = false;
   int _lastCountdown = 0;
-  bool _debugMode = true; // Enable debug mode by default for troubleshooting
+  bool _debugMode = false; // Hidden by default, persisted via SharedPreferences
   String _lastCapturedStage = ''; // Track last stage to avoid duplicate captures
 
   @override
@@ -74,6 +77,10 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
 
   Future<void> _initializeServices() async {
     try {
+      // Load debug mode preference
+      final prefs = await SharedPreferences.getInstance();
+      _debugMode = prefs.getBool(_debugModeKey) ?? false;
+
       // Initialize pose detection
       _poseService.initialize();
 
@@ -292,50 +299,58 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
                 workoutManager.positionFeedback.message.isNotEmpty)
               _buildPositionFeedback(workoutManager),
 
-            // Debug overlay
-            if (_debugMode)
-              DebugOverlay(
-                workoutManager: workoutManager,
-                isVisible: workoutManager.state == WorkoutState.active ||
-                    workoutManager.state == WorkoutState.paused,
-              ),
+            // Debug overlay (always mounted for animation, visibility controlled by isExpanded)
+            DebugOverlay(
+              workoutManager: workoutManager,
+              isVisible: workoutManager.state == WorkoutState.active ||
+                  workoutManager.state == WorkoutState.paused,
+              isExpanded: _debugMode,
+            ),
 
-            // Toggle buttons (debug + training capture)
+            // Training capture toggle (top right)
             Positioned(
               top: 8,
               right: 8,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Training capture toggle
-                  IconButton(
-                    onPressed: () async {
-                      final newEnabled = !_trainingService.isEnabled;
-                      await _trainingService.setEnabled(newEnabled);
-                      // Start session if enabling mid-workout
-                      if (newEnabled && workoutManager.state == WorkoutState.active) {
-                        await _trainingService.startSession(workoutManager.exerciseType.name);
-                      }
-                      setState(() {});
-                    },
-                    icon: Icon(
-                      _trainingService.isEnabled ? Icons.camera_alt : Icons.camera_alt_outlined,
-                      color: _trainingService.isEnabled ? Colors.orange : Colors.white54,
-                    ),
-                    tooltip: 'Training data capture',
-                  ),
-                  // Debug toggle
-                  IconButton(
-                    onPressed: () => setState(() => _debugMode = !_debugMode),
-                    icon: Icon(
-                      _debugMode ? Icons.bug_report : Icons.bug_report_outlined,
-                      color: _debugMode ? Colors.green : Colors.white54,
-                    ),
-                    tooltip: 'Debug overlay',
-                  ),
-                ],
+              child: IconButton(
+                onPressed: () async {
+                  final newEnabled = !_trainingService.isEnabled;
+                  await _trainingService.setEnabled(newEnabled);
+                  // Start session if enabling mid-workout
+                  if (newEnabled && workoutManager.state == WorkoutState.active) {
+                    await _trainingService.startSession(workoutManager.exerciseType.name);
+                  }
+                  setState(() {});
+                },
+                icon: Icon(
+                  _trainingService.isEnabled ? Icons.camera_alt : Icons.camera_alt_outlined,
+                  color: _trainingService.isEnabled ? Colors.orange : Colors.white54,
+                ),
+                tooltip: 'Training data capture',
               ),
             ),
+
+            // Debug overlay FAB (bottom left)
+            if (workoutManager.state == WorkoutState.active ||
+                workoutManager.state == WorkoutState.paused)
+              Positioned(
+                bottom: 100,
+                left: 16,
+                child: FloatingActionButton.small(
+                  heroTag: 'debug',
+                  onPressed: () async {
+                    final newMode = !_debugMode;
+                    setState(() => _debugMode = newMode);
+                    // Persist preference
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool(_debugModeKey, newMode);
+                  },
+                  backgroundColor: _debugMode ? Colors.green : Colors.black54,
+                  child: Icon(
+                    _debugMode ? Icons.bug_report : Icons.bug_report_outlined,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
 
             // Controls
             _buildControls(workoutManager),

@@ -16,11 +16,18 @@ class PushupCounter extends ExerciseCounter {
   static const double downAngleThreshold = 90.0; // Elbow angle for "down" position
   static const double angleTolerance = 10.0; // Tolerance for angle detection
 
-  /// Body alignment threshold
-  static const double maxBodyDeviation = 15.0;
+  /// Body alignment threshold - increased to 30° to account for normal form variation and detection noise
+  static const double maxBodyDeviation = 30.0;
 
   /// Track if we've seen a valid down position this cycle
   bool _wasDown = false;
+
+  /// Track form quality throughout the rep cycle
+  int _goodFormFrames = 0;
+  int _badFormFrames = 0;
+
+  /// Minimum percentage of good form frames required for a valid rep
+  static const double minGoodFormRatio = 0.6; // 60% of frames must have good form
 
   @override
   String get exerciseName => 'Pushups';
@@ -67,25 +74,58 @@ class PushupCounter extends ExerciseCounter {
 
   @override
   bool checkRepCompletion() {
-    if (!isValidPose()) return false;
+    if (!isValidPose()) {
+      print('[PUSHUP] Invalid pose - missing landmarks');
+      return false;
+    }
+
+    // Check if person is in horizontal plank position (not standing)
+    if (!_isInPlankPosition()) {
+      print('[PUSHUP] Not in plank position - likely standing');
+      return false;
+    }
 
     final angles = getDebugAngles();
     final elbowAngle = angles['elbow'];
 
-    if (elbowAngle == null) return false;
+    if (elbowAngle == null) {
+      print('[PUSHUP] No elbow angle detected');
+      return false;
+    }
 
     // Check body alignment
     final bodyDeviation = angles['bodyDeviation'];
-    final isAligned = bodyDeviation == null || bodyDeviation < maxBodyDeviation;
+    // Good form: body deviation is known and within threshold
+    // Bad form: body deviation is known and exceeds threshold (including high values that indicate standing)
+    final hasGoodForm = bodyDeviation != null && bodyDeviation < maxBodyDeviation;
+    final hasBadForm = bodyDeviation != null && bodyDeviation >= maxBodyDeviation;
+
+    // Track form quality during active rep (goingDown, down, goingUp stages)
+    if (_stage != PushupStage.up && bodyDeviation != null) {
+      if (hasGoodForm) {
+        _goodFormFrames++;
+      } else {
+        _badFormFrames++;
+      }
+    }
+
+    // Calculate current form ratio for logging
+    final totalFrames = _goodFormFrames + _badFormFrames;
+    final formRatio = totalFrames > 0 ? _goodFormFrames / totalFrames : 1.0;
+
+    // Log angles for debugging
+    print('[PUSHUP] Stage: $_stage | Elbow: ${elbowAngle.toStringAsFixed(1)}° | BodyDev: ${bodyDeviation?.toStringAsFixed(1) ?? "N/A"}° | Form: ${(formRatio * 100).toInt()}% good (${_goodFormFrames}/${totalFrames})');
 
     // State machine for pushup detection
     switch (_stage) {
       case PushupStage.up:
         // Looking for transition to down position
         if (elbowAngle <= downAngleThreshold + angleTolerance) {
+          _resetFormTracking(); // Start fresh form tracking for new rep
           _stage = PushupStage.down;
           _wasDown = true;
         } else if (elbowAngle < upAngleThreshold - angleTolerance) {
+          _resetFormTracking(); // Start fresh form tracking for new rep
           _stage = PushupStage.goingDown;
         }
         break;
@@ -102,15 +142,22 @@ class PushupCounter extends ExerciseCounter {
         if (elbowAngle >= upAngleThreshold - angleTolerance) {
           _stage = PushupStage.up;
           if (_wasDown && canCountRep()) {
-            if (isAligned) {
+            // Check form quality over the entire rep cycle
+            final repTotalFrames = _goodFormFrames + _badFormFrames;
+            final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 0.0;
+            final hasGoodOverallForm = repFormRatio >= minGoodFormRatio;
+
+            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) - ${hasGoodOverallForm ? "VALID" : "INVALID"}');
+
+            if (hasGoodOverallForm) {
               recordRep();
-              _wasDown = false;
-              return true;
             } else {
-              // Poor form - count as invalid
+              // Poor form throughout rep - count as invalid
               recordInvalidRep();
-              _wasDown = false;
             }
+            _wasDown = false;
+            _resetFormTracking();
+            return hasGoodOverallForm;
           }
         } else if (elbowAngle > downAngleThreshold + angleTolerance) {
           _stage = PushupStage.goingUp;
@@ -121,14 +168,21 @@ class PushupCounter extends ExerciseCounter {
         if (elbowAngle >= upAngleThreshold - angleTolerance) {
           _stage = PushupStage.up;
           if (_wasDown && canCountRep()) {
-            if (isAligned) {
+            // Check form quality over the entire rep cycle
+            final repTotalFrames = _goodFormFrames + _badFormFrames;
+            final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 0.0;
+            final hasGoodOverallForm = repFormRatio >= minGoodFormRatio;
+
+            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) - ${hasGoodOverallForm ? "VALID" : "INVALID"}');
+
+            if (hasGoodOverallForm) {
               recordRep();
-              _wasDown = false;
-              return true;
             } else {
               recordInvalidRep();
-              _wasDown = false;
             }
+            _wasDown = false;
+            _resetFormTracking();
+            return hasGoodOverallForm;
           }
         } else if (elbowAngle <= downAngleThreshold + angleTolerance) {
           // Went back down
@@ -193,10 +247,53 @@ class PushupCounter extends ExerciseCounter {
     return angles;
   }
 
+  /// Check if the person is in a horizontal plank position (not standing upright)
+  /// This prevents false positives when the user stands up after a workout
+  bool _isInPlankPosition() {
+    final leftShoulder = getLandmark(PoseLandmarkType.leftShoulder);
+    final rightShoulder = getLandmark(PoseLandmarkType.rightShoulder);
+    final leftHip = getLandmark(PoseLandmarkType.leftHip);
+    final rightHip = getLandmark(PoseLandmarkType.rightHip);
+
+    // Get the best available shoulder and hip
+    final shoulder = (hasConfidence(leftShoulder) ? leftShoulder : rightShoulder);
+    final hip = (hasConfidence(leftHip) ? leftHip : rightHip);
+
+    if (shoulder == null || hip == null) return true; // Assume plank if we can't tell
+
+    // Calculate vertical distance between shoulder and hip
+    final verticalDiff = (shoulder.y - hip.y).abs();
+    // Calculate horizontal distance between shoulder and hip
+    final horizontalDiff = (shoulder.x - hip.x).abs();
+
+    // In a plank position, the body is more horizontal than vertical
+    // So horizontal distance should be greater than or close to vertical distance
+    // When standing, vertical distance is much greater than horizontal distance
+
+    // Calculate the ratio - if vertical diff is much larger than horizontal, person is standing
+    final ratio = verticalDiff / (horizontalDiff + 1); // +1 to avoid division by zero
+
+    // If vertical distance is more than 2x horizontal distance, person is likely standing
+    final isPlank = ratio < 2.0;
+
+    if (!isPlank) {
+      print('[PUSHUP] Body orientation: vertical=$verticalDiff, horizontal=$horizontalDiff, ratio=$ratio - STANDING');
+    }
+
+    return isPlank;
+  }
+
+  /// Reset form tracking counters for next rep
+  void _resetFormTracking() {
+    _goodFormFrames = 0;
+    _badFormFrames = 0;
+  }
+
   @override
   void reset() {
     super.reset();
     _stage = PushupStage.up;
     _wasDown = false;
+    _resetFormTracking();
   }
 }

@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to track your exercise form using on-device pose detection. No video data is uploaded or stored.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app may use the microphone for audio feedback during workouts.</string>
 </dict>
 </plist>

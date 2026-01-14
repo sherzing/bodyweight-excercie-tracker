@@ -8,9 +8,11 @@ import '../services/camera_service.dart';
 import '../services/database_service.dart';
 import '../services/feedback_service.dart';
 import '../services/pose_detection_service.dart';
+import '../services/training_data_service.dart';
 import '../widgets/pose_painter.dart';
 import '../widgets/rep_flash_overlay.dart';
 import '../widgets/celebration_overlay.dart';
+import '../widgets/debug_overlay.dart';
 
 class TrackingScreen extends StatefulWidget {
   const TrackingScreen({super.key});
@@ -24,11 +26,14 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   final PoseDetectionService _poseService = PoseDetectionService();
   final DatabaseService _db = DatabaseService();
   final FeedbackService _feedback = FeedbackService();
+  final TrainingDataService _trainingService = TrainingDataService();
   final GlobalKey<RepFlashOverlayState> _flashKey = GlobalKey();
   bool _isInitializing = true;
   String? _errorMessage;
   bool _workoutSaved = false;
   int _lastCountdown = 0;
+  bool _debugMode = true; // Enable debug mode by default for troubleshooting
+  String _lastCapturedStage = ''; // Track last stage to avoid duplicate captures
 
   @override
   void initState() {
@@ -72,8 +77,14 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
       // Initialize pose detection
       _poseService.initialize();
 
+      // Initialize training data service
+      await _trainingService.initialize();
+
       // Initialize camera
       await _cameraService.initialize();
+
+      // Set camera controller for training capture
+      _trainingService.setCameraController(_cameraService.controller);
 
       // Set up frame processing pipeline
       _cameraService.onFrame = (inputImage) {
@@ -115,7 +126,11 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
         };
         workoutManager.onWorkoutCompleted = () {
           _feedback.onWorkoutCompleted();
+          _trainingService.endSession();
         };
+
+        // Start training session if enabled
+        _trainingService.startSession(workoutManager.exerciseType.name);
 
         workoutManager.startWorkout();
       }
@@ -150,7 +165,29 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
     _unlockOrientation();
     _cameraService.dispose();
     _poseService.dispose();
+    _trainingService.endSession();
     super.dispose();
+  }
+
+  /// Capture training data when stage changes to Up or Down
+  void _captureTrainingDataIfNeeded(WorkoutManager workoutManager) {
+    if (!_trainingService.isEnabled) return;
+    if (workoutManager.state != WorkoutState.active) return;
+
+    final currentStage = workoutManager.currentStage;
+
+    // Only capture on Up or Down, and only once per stage
+    if ((currentStage == 'Up' || currentStage == 'Down') &&
+        currentStage != _lastCapturedStage) {
+      _lastCapturedStage = currentStage;
+      _trainingService.captureAtStage(
+        stage: currentStage,
+        angles: workoutManager.debugAngles,
+      );
+    } else if (currentStage != 'Up' && currentStage != 'Down') {
+      // Reset when in transition stages
+      _lastCapturedStage = '';
+    }
   }
 
   @override
@@ -225,6 +262,9 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
 
     return Consumer<WorkoutManager>(
       builder: (context, workoutManager, child) {
+        // Capture training data on stage changes
+        _captureTrainingDataIfNeeded(workoutManager);
+
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -251,6 +291,51 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
             if (workoutManager.state == WorkoutState.active &&
                 workoutManager.positionFeedback.message.isNotEmpty)
               _buildPositionFeedback(workoutManager),
+
+            // Debug overlay
+            if (_debugMode)
+              DebugOverlay(
+                workoutManager: workoutManager,
+                isVisible: workoutManager.state == WorkoutState.active ||
+                    workoutManager.state == WorkoutState.paused,
+              ),
+
+            // Toggle buttons (debug + training capture)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Training capture toggle
+                  IconButton(
+                    onPressed: () async {
+                      final newEnabled = !_trainingService.isEnabled;
+                      await _trainingService.setEnabled(newEnabled);
+                      // Start session if enabling mid-workout
+                      if (newEnabled && workoutManager.state == WorkoutState.active) {
+                        await _trainingService.startSession(workoutManager.exerciseType.name);
+                      }
+                      setState(() {});
+                    },
+                    icon: Icon(
+                      _trainingService.isEnabled ? Icons.camera_alt : Icons.camera_alt_outlined,
+                      color: _trainingService.isEnabled ? Colors.orange : Colors.white54,
+                    ),
+                    tooltip: 'Training data capture',
+                  ),
+                  // Debug toggle
+                  IconButton(
+                    onPressed: () => setState(() => _debugMode = !_debugMode),
+                    icon: Icon(
+                      _debugMode ? Icons.bug_report : Icons.bug_report_outlined,
+                      color: _debugMode ? Colors.green : Colors.white54,
+                    ),
+                    tooltip: 'Debug overlay',
+                  ),
+                ],
+              ),
+            ),
 
             // Controls
             _buildControls(workoutManager),

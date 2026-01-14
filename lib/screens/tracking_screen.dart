@@ -14,6 +14,7 @@ import '../widgets/pose_painter.dart';
 import '../widgets/rep_flash_overlay.dart';
 import '../widgets/celebration_overlay.dart';
 import '../widgets/debug_overlay.dart';
+import '../widgets/guide_lines_overlay.dart';
 
 class TrackingScreen extends StatefulWidget {
   const TrackingScreen({super.key});
@@ -24,6 +25,7 @@ class TrackingScreen extends StatefulWidget {
 
 class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObserver {
   static const String _debugModeKey = 'debug_overlay_visible';
+  static const String _guideLinesKey = 'guide_lines_visible';
 
   final CameraService _cameraService = CameraService();
   final PoseDetectionService _poseService = PoseDetectionService();
@@ -36,6 +38,7 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   bool _workoutSaved = false;
   int _lastCountdown = 0;
   bool _debugMode = false; // Hidden by default, persisted via SharedPreferences
+  bool _guideLinesVisible = true; // Visible by default to help new users
   String _lastCapturedStage = ''; // Track last stage to avoid duplicate captures
 
   @override
@@ -77,9 +80,10 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
 
   Future<void> _initializeServices() async {
     try {
-      // Load debug mode preference
+      // Load preferences
       final prefs = await SharedPreferences.getInstance();
       _debugMode = prefs.getBool(_debugModeKey) ?? false;
+      _guideLinesVisible = prefs.getBool(_guideLinesKey) ?? true;
 
       // Initialize pose detection
       _poseService.initialize();
@@ -281,6 +285,18 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
             // Pose overlay
             _buildPoseOverlay(workoutManager),
 
+            // Guide lines overlay (shows up/down position thresholds)
+            if (workoutManager.state == WorkoutState.active ||
+                workoutManager.state == WorkoutState.paused)
+              GuideLinesOverlay(
+                pose: workoutManager.currentPose,
+                imageSize: _cameraService.controller?.value.previewSize ?? Size.zero,
+                currentStage: workoutManager.currentStage,
+                isVisible: _guideLinesVisible,
+                isFrontCamera:
+                    _cameraService.camera?.lensDirection == CameraLensDirection.front,
+              ),
+
             // Countdown overlay
             if (workoutManager.state == WorkoutState.countdown)
               _buildCountdownOverlay(workoutManager),
@@ -329,26 +345,49 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
               ),
             ),
 
-            // Debug overlay FAB (bottom left)
+            // Toggle FABs (bottom left)
             if (workoutManager.state == WorkoutState.active ||
                 workoutManager.state == WorkoutState.paused)
               Positioned(
                 bottom: 100,
                 left: 16,
-                child: FloatingActionButton.small(
-                  heroTag: 'debug',
-                  onPressed: () async {
-                    final newMode = !_debugMode;
-                    setState(() => _debugMode = newMode);
-                    // Persist preference
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool(_debugModeKey, newMode);
-                  },
-                  backgroundColor: _debugMode ? Colors.green : Colors.black54,
-                  child: Icon(
-                    _debugMode ? Icons.bug_report : Icons.bug_report_outlined,
-                    color: Colors.white,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Guide lines toggle FAB
+                    FloatingActionButton.small(
+                      heroTag: 'guideLines',
+                      onPressed: () async {
+                        final newVisible = !_guideLinesVisible;
+                        setState(() => _guideLinesVisible = newVisible);
+                        // Persist preference
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool(_guideLinesKey, newVisible);
+                      },
+                      backgroundColor: _guideLinesVisible ? Colors.green : Colors.black54,
+                      child: Icon(
+                        _guideLinesVisible ? Icons.straighten : Icons.straighten_outlined,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Debug overlay FAB
+                    FloatingActionButton.small(
+                      heroTag: 'debug',
+                      onPressed: () async {
+                        final newMode = !_debugMode;
+                        setState(() => _debugMode = newMode);
+                        // Persist preference
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool(_debugModeKey, newMode);
+                      },
+                      backgroundColor: _debugMode ? Colors.green : Colors.black54,
+                      child: Icon(
+                        _debugMode ? Icons.bug_report : Icons.bug_report_outlined,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 

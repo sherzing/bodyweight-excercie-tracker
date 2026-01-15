@@ -249,44 +249,9 @@ class PushupCounter extends ExerciseCounter {
     return angles;
   }
 
-  /// Minimum shoulder width (in pixels) to consider the view as front-facing.
-  /// When facing the camera, left and right shoulders are horizontally separated.
-  /// When from the side, shoulders appear nearly overlapping.
-  static const double frontViewShoulderWidthThreshold = 50.0;
-
-  /// Check if the camera is viewing from the front (facing the user).
-  /// Front view: both shoulders visible with significant horizontal separation.
-  /// Side view: shoulders appear nearly overlapping (small horizontal separation).
-  bool _isFrontView() {
-    final leftShoulder = getLandmark(PoseLandmarkType.leftShoulder);
-    final rightShoulder = getLandmark(PoseLandmarkType.rightShoulder);
-
-    if (!hasConfidence(leftShoulder) || !hasConfidence(rightShoulder)) {
-      return false; // Can't determine, assume side view
-    }
-
-    final shoulderWidth = (leftShoulder!.x - rightShoulder!.x).abs();
-    final isFront = shoulderWidth > frontViewShoulderWidthThreshold;
-
-    if (isFront) {
-      print('[PUSHUP] View: FRONT (shoulder width: ${shoulderWidth.toStringAsFixed(1)}px)');
-    }
-
-    return isFront;
-  }
-
   /// Check if the person is in a horizontal plank position (not standing upright)
-  /// This prevents false positives when the user stands up after a workout.
-  /// For front view, we skip this check since shoulder-hip alignment looks vertical
-  /// even in plank position.
+  /// This prevents false positives when the user stands up after a workout
   bool _isInPlankPosition() {
-    // In front view, the shoulder-hip vertical/horizontal ratio check doesn't work
-    // because even in plank, shoulders appear above hips from the camera's perspective.
-    // We rely on elbow angle detection instead.
-    if (_isFrontView()) {
-      return true; // Trust elbow angle for front view
-    }
-
     final leftShoulder = getLandmark(PoseLandmarkType.leftShoulder);
     final rightShoulder = getLandmark(PoseLandmarkType.rightShoulder);
     final leftHip = getLandmark(PoseLandmarkType.leftHip);
@@ -303,7 +268,7 @@ class PushupCounter extends ExerciseCounter {
     // Calculate horizontal distance between shoulder and hip
     final horizontalDiff = (shoulder.x - hip.x).abs();
 
-    // In a plank position (side view), the body is more horizontal than vertical
+    // In a plank position, the body is more horizontal than vertical
     // So horizontal distance should be greater than or close to vertical distance
     // When standing, vertical distance is much greater than horizontal distance
 

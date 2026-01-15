@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/workout.dart';
 import '../providers/workout_manager.dart';
 import '../services/camera_service.dart';
@@ -46,7 +47,18 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _lockOrientation();
+    _enableWakelock();
     _initializeServices();
+  }
+
+  /// Keep screen awake during workout
+  void _enableWakelock() {
+    WakelockPlus.enable();
+  }
+
+  /// Allow screen to sleep again
+  Future<void> _disableWakelock() async {
+    await WakelockPlus.disable();
   }
 
   /// Lock orientation to current orientation during workout
@@ -174,6 +186,7 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _unlockOrientation();
+    _disableWakelock();
     _cameraService.dispose();
     _poseService.dispose();
     _trainingService.endSession();

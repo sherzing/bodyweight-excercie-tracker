@@ -57,6 +57,7 @@ dependencies:
 
   # Sharing
   share_plus: ^10.1.4
+  wakelock_plus: ^1.4.0
 
 dev_dependencies:
   flutter_test:

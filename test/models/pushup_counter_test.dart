@@ -170,6 +170,123 @@ void main() {
         expect(counter.getCurrentStage(), equals('Up'));
       });
     });
+
+    group('Complete Rep Cycle', () {
+      test('counts valid rep for full up-down-up cycle', () {
+        // Start in up position
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Up'));
+
+        // Go to down position
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Down'));
+
+        // Wait for debounce
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+
+        // Return to up position - should count rep
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        final completed = counter.checkRepCompletion();
+
+        expect(completed, isTrue);
+        expect(counter.repCount, equals(1));
+        expect(counter.invalidRepCount, equals(0));
+      });
+
+      test('counts valid rep when ankles not visible (no form tracking)', () {
+        // This tests the bug fix: when ankles aren't visible, bodyDeviation is null,
+        // so no form frames are tracked. Previously this defaulted to 0% form ratio
+        // causing all reps to be invalid. Now it defaults to 100% (valid).
+
+        // Start in up position (no ankles)
+        counter.updateLandmarks(_createPushupPoseWithoutAnkles(elbowAngle: 170));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Up'));
+
+        // Go to down position
+        counter.updateLandmarks(_createPushupPoseWithoutAnkles(elbowAngle: 85));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Down'));
+
+        // Wait for debounce
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+
+        // Return to up position - should count as VALID rep (not invalid)
+        counter.updateLandmarks(_createPushupPoseWithoutAnkles(elbowAngle: 170));
+        final completed = counter.checkRepCompletion();
+
+        expect(completed, isTrue);
+        expect(counter.repCount, equals(1));
+        expect(counter.invalidRepCount, equals(0)); // Key assertion: should NOT be invalid
+      });
+
+      test('counts invalid rep when form is poor throughout', () {
+        // Start in up position with bad form (hips sagging - high body deviation)
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Go to down position with bad form
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 85));
+        counter.checkRepCompletion();
+
+        // Add more frames with bad form to ensure >40% bad
+        for (var i = 0; i < 5; i++) {
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 90));
+          counter.checkRepCompletion();
+        }
+
+        // Wait for debounce
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+
+        // Return to up position - should count as invalid due to poor form
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(counter.invalidRepCount, equals(1));
+        expect(counter.repCount, equals(0));
+      });
+
+      test('multiple reps counted correctly', () {
+        // Complete 3 reps
+        for (var rep = 0; rep < 3; rep++) {
+          // Up position
+          counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+          counter.checkRepCompletion();
+
+          // Down position
+          counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+          counter.checkRepCompletion();
+
+          // Clear debounce
+          counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+
+          // Back to up
+          counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+          counter.checkRepCompletion();
+        }
+
+        expect(counter.repCount, equals(3));
+      });
+    });
+
+    group('Partial Visibility', () {
+      test('bodyDeviation is null when ankles missing', () {
+        counter.updateLandmarks(_createPushupPoseWithoutAnkles(elbowAngle: 90));
+
+        final angles = counter.getDebugAngles();
+
+        expect(angles.containsKey('bodyDeviation'), isFalse);
+        expect(angles.containsKey('elbow'), isTrue); // Elbow should still work
+      });
+
+      test('pose is still valid without ankles', () {
+        counter.updateLandmarks(_createPushupPoseWithoutAnkles(elbowAngle: 90));
+
+        expect(counter.isValidPose(), isTrue);
+      });
+    });
   });
 }
 
@@ -189,52 +306,115 @@ PoseLandmark _createLandmark(
 }
 
 /// Create a pushup pose with specified elbow angle.
-/// Uses trigonometry to correctly position wrist for desired angle at elbow.
+/// The pose simulates a HORIZONTAL plank position (body parallel to ground).
+///
+/// Elbow angle meanings:
+/// - 170-180° = arms straight (up position)
+/// - 85-100° = arms bent (down position)
 List<PoseLandmark> _createPushupPose({required double elbowAngle}) {
+  // Horizontal plank: body parallel to ground, arms pointing down
+  // Shoulder at (100, 200), Elbow at (100, 280) - arm pointing DOWN
 
-  // Fixed positions for shoulder and elbow
-  const shoulderX = 150.0;
-  const shoulderY = 100.0;
-  const elbowX = 150.0;
-  const elbowY = 200.0;
-  const armLength = 100.0; // Distance from elbow to wrist
+  const shoulderX = 100.0;
+  const shoulderY = 200.0;
+  const elbowX = 100.0;
+  const elbowY = 280.0;
+  const armLength = 60.0;
 
-  // Calculate wrist position using trigonometry
-  // The angle at elbow is formed by shoulder-elbow-wrist
-  // We need to position the wrist so that this angle equals elbowAngle
+  // Calculate wrist position based on elbow angle
+  // The angle is measured at the elbow between shoulder-elbow-wrist
+  // Shoulder is UP from elbow (negative Y direction)
+  // For straight arm (180°): wrist continues DOWN (positive Y)
+  // For bent arm (90°): wrist is perpendicular (positive X)
 
-  // Vector from elbow to shoulder
-  const toShoulderX = shoulderX - elbowX;
-  const toShoulderY = shoulderY - elbowY;
+  final angleRad = elbowAngle * math.pi / 180;
+  // Wrist position relative to elbow:
+  // At 180°: wrist at (0, armLength) - straight down from elbow
+  // At 90°: wrist at (armLength, 0) - perpendicular
+  // The formula: rotate the "straight down" direction by (180 - angle)
+  final rotationFromStraight = (180 - elbowAngle) * math.pi / 180;
+  final wristX = elbowX + armLength * math.sin(rotationFromStraight);
+  final wristY = elbowY + armLength * math.cos(rotationFromStraight);
 
-  // Angle of shoulder vector from elbow
-  final shoulderAngle = math.atan2(toShoulderY, toShoulderX);
-
-  // Convert desired elbow angle to radians
-  final desiredAngleRad = elbowAngle * math.pi / 180;
-
-  // Wrist angle relative to horizontal
-  // For elbowAngle of 180 (straight), wrist continues in same direction
-  // For elbowAngle of 90 (bent), wrist is perpendicular
-  final wristAngle = shoulderAngle + math.pi - desiredAngleRad;
-
-  final wristX = elbowX + armLength * math.cos(wristAngle);
-  final wristY = elbowY + armLength * math.sin(wristAngle);
+  // Horizontal body
+  const hipX = 300.0;
+  const hipY = 200.0;
+  const ankleX = 500.0;
+  const ankleY = 200.0;
 
   return [
-    // Left arm
-    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 50, shoulderY),
-    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 50, elbowY),
-    _createLandmark(PoseLandmarkType.leftWrist, wristX - 50, wristY),
-    // Right arm
-    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 50, shoulderY),
-    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 50, elbowY),
-    _createLandmark(PoseLandmarkType.rightWrist, wristX + 50, wristY),
-    // Hips (aligned with shoulders for good body form)
-    _createLandmark(PoseLandmarkType.leftHip, shoulderX - 50, 300),
-    _createLandmark(PoseLandmarkType.rightHip, shoulderX + 50, 300),
-    // Ankles (aligned for straight body)
-    _createLandmark(PoseLandmarkType.leftAnkle, shoulderX - 50, 500),
-    _createLandmark(PoseLandmarkType.rightAnkle, shoulderX + 50, 500),
+    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 20, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 20, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, wristX + 20, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
+    _createLandmark(PoseLandmarkType.leftAnkle, ankleX - 20, ankleY),
+    _createLandmark(PoseLandmarkType.rightAnkle, ankleX + 20, ankleY),
+  ];
+}
+
+/// Create a pushup pose WITHOUT ankles (simulates partial visibility).
+/// This tests the scenario where the camera doesn't capture the full body.
+List<PoseLandmark> _createPushupPoseWithoutAnkles({required double elbowAngle}) {
+  const shoulderX = 100.0;
+  const shoulderY = 200.0;
+  const elbowX = 100.0;
+  const elbowY = 280.0;
+  const armLength = 60.0;
+
+  final rotationFromStraight = (180 - elbowAngle) * math.pi / 180;
+  final wristX = elbowX + armLength * math.sin(rotationFromStraight);
+  final wristY = elbowY + armLength * math.cos(rotationFromStraight);
+
+  const hipX = 300.0;
+  const hipY = 200.0;
+
+  return [
+    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 20, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 20, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, wristX + 20, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
+    // NO ANKLES
+  ];
+}
+
+/// Create a pushup pose with BAD FORM (hips sagging, high body deviation).
+/// Body deviation will exceed the 30° threshold.
+List<PoseLandmark> _createPushupPoseWithBadForm({required double elbowAngle}) {
+  const shoulderX = 100.0;
+  const shoulderY = 200.0;
+  const elbowX = 100.0;
+  const elbowY = 280.0;
+  const armLength = 60.0;
+
+  final rotationFromStraight = (180 - elbowAngle) * math.pi / 180;
+  final wristX = elbowX + armLength * math.sin(rotationFromStraight);
+  final wristY = elbowY + armLength * math.cos(rotationFromStraight);
+
+  // Hips SAGGING - Y is much higher than shoulder/ankle line
+  const hipX = 300.0;
+  const hipY = 350.0; // Creates >30° body deviation
+
+  const ankleX = 500.0;
+  const ankleY = 200.0; // Same as shoulder Y
+
+  return [
+    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 20, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 20, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, wristX + 20, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
+    _createLandmark(PoseLandmarkType.leftAnkle, ankleX - 20, ankleY),
+    _createLandmark(PoseLandmarkType.rightAnkle, ankleX + 20, ankleY),
   ];
 }

@@ -143,11 +143,12 @@ class PushupCounter extends ExerciseCounter {
           _stage = PushupStage.up;
           if (_wasDown && canCountRep()) {
             // Check form quality over the entire rep cycle
+            // Default to 1.0 (valid) if no frames were tracked (e.g., ankles not visible)
             final repTotalFrames = _goodFormFrames + _badFormFrames;
-            final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 0.0;
+            final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 1.0;
             final hasGoodOverallForm = repFormRatio >= minGoodFormRatio;
 
-            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) - ${hasGoodOverallForm ? "VALID" : "INVALID"}');
+            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) frames=$repTotalFrames - ${hasGoodOverallForm ? "VALID" : "INVALID"}');
 
             if (hasGoodOverallForm) {
               recordRep();
@@ -169,8 +170,9 @@ class PushupCounter extends ExerciseCounter {
           _stage = PushupStage.up;
           if (_wasDown && canCountRep()) {
             // Check form quality over the entire rep cycle
+            // Default to 1.0 (valid) if no frames were tracked (e.g., ankles not visible)
             final repTotalFrames = _goodFormFrames + _badFormFrames;
-            final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 0.0;
+            final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 1.0;
             final hasGoodOverallForm = repFormRatio >= minGoodFormRatio;
 
             print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) - ${hasGoodOverallForm ? "VALID" : "INVALID"}');

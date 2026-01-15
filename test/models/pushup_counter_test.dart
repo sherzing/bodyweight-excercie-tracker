@@ -287,6 +287,56 @@ void main() {
         expect(counter.isValidPose(), isTrue);
       });
     });
+
+    group('Front View Detection', () {
+      test('detects front view when shoulders are widely separated', () {
+        // Front view: shoulders 100px apart (> 50px threshold)
+        counter.updateLandmarks(_createFrontViewPushupPose(elbowAngle: 170));
+
+        // Should be valid pose and count rep despite vertical body orientation
+        expect(counter.isValidPose(), isTrue);
+      });
+
+      test('detects side view when shoulders are close together', () {
+        // Side view: shoulders only 40px apart (< 50px threshold)
+        counter.updateLandmarks(_createSideViewPushupPose(elbowAngle: 170));
+
+        expect(counter.isValidPose(), isTrue);
+      });
+
+      test('counts valid rep in front view despite vertical body orientation', () {
+        // Front view pushup - body appears vertical but should still count
+        // Start in up position
+        counter.updateLandmarks(_createFrontViewPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Up'));
+
+        // Go to down position
+        counter.updateLandmarks(_createFrontViewPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Down'));
+
+        // Wait for debounce
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+
+        // Return to up position - should count rep
+        counter.updateLandmarks(_createFrontViewPushupPose(elbowAngle: 170));
+        final completed = counter.checkRepCompletion();
+
+        expect(completed, isTrue);
+        expect(counter.repCount, equals(1));
+      });
+
+      test('side view rejects standing pose', () {
+        // Side view with vertical body orientation (standing)
+        counter.updateLandmarks(_createStandingPose());
+        counter.checkRepCompletion();
+
+        // Should not transition to down despite elbow angle
+        // because standing detection should kick in
+        expect(counter.repCount, equals(0));
+      });
+    });
   });
 }
 
@@ -406,6 +456,126 @@ List<PoseLandmark> _createPushupPoseWithBadForm({required double elbowAngle}) {
   const ankleY = 200.0; // Same as shoulder Y
 
   return [
+    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 20, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 20, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, wristX + 20, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
+    _createLandmark(PoseLandmarkType.leftAnkle, ankleX - 20, ankleY),
+    _createLandmark(PoseLandmarkType.rightAnkle, ankleX + 20, ankleY),
+  ];
+}
+
+/// Create a FRONT VIEW pushup pose (user facing the camera).
+/// Shoulders are widely separated (100px apart > 50px threshold).
+/// Body appears vertical from camera perspective but this is valid for front view.
+List<PoseLandmark> _createFrontViewPushupPose({required double elbowAngle}) {
+  // Front view: shoulders horizontally separated, hips below shoulders
+  // Left shoulder at X=50, right shoulder at X=150 = 100px apart
+  const leftShoulderX = 50.0;
+  const rightShoulderX = 150.0;
+  const shoulderY = 100.0;
+
+  // Elbows directly below shoulders (arms pointing straight down)
+  const leftElbowX = 50.0;
+  const rightElbowX = 150.0;
+  const elbowY = 180.0;
+  const armLength = 60.0;
+
+  // Calculate wrist position based on elbow angle
+  // Same geometry as side view - arms point down, wrist bends based on angle
+  // For straight arm (180°): wrist directly below elbow
+  // For bent arm (90°): wrist perpendicular to forearm
+  final rotationFromStraight = (180 - elbowAngle) * math.pi / 180;
+  // Left arm bends inward (positive X), right arm bends inward (negative X)
+  final leftWristX = leftElbowX + armLength * math.sin(rotationFromStraight);
+  final rightWristX = rightElbowX - armLength * math.sin(rotationFromStraight);
+  final wristY = elbowY + armLength * math.cos(rotationFromStraight);
+
+  // Hips below shoulders (vertical body orientation in camera view)
+  const leftHipX = 70.0;
+  const rightHipX = 130.0;
+  const hipY = 250.0;
+
+  // Ankles at bottom
+  const leftAnkleX = 80.0;
+  const rightAnkleX = 120.0;
+  const ankleY = 400.0;
+
+  return [
+    _createLandmark(PoseLandmarkType.leftShoulder, leftShoulderX, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, leftElbowX, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, leftWristX, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, rightShoulderX, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, rightElbowX, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, rightWristX, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, leftHipX, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, rightHipX, hipY),
+    _createLandmark(PoseLandmarkType.leftAnkle, leftAnkleX, ankleY),
+    _createLandmark(PoseLandmarkType.rightAnkle, rightAnkleX, ankleY),
+  ];
+}
+
+/// Create a SIDE VIEW pushup pose (user perpendicular to camera).
+/// Shoulders are close together (40px apart < 50px threshold).
+/// This is the existing horizontal plank view.
+List<PoseLandmark> _createSideViewPushupPose({required double elbowAngle}) {
+  // Side view: shoulders appear close together (one behind the other)
+  // Shoulder separation is 40px (< 50px threshold for front view)
+  const shoulderX = 100.0;
+  const shoulderY = 200.0;
+  const elbowX = 100.0;
+  const elbowY = 280.0;
+  const armLength = 60.0;
+
+  final rotationFromStraight = (180 - elbowAngle) * math.pi / 180;
+  final wristX = elbowX + armLength * math.sin(rotationFromStraight);
+  final wristY = elbowY + armLength * math.cos(rotationFromStraight);
+
+  // Horizontal body - hip to the right of shoulder
+  const hipX = 300.0;
+  const hipY = 200.0;
+  const ankleX = 500.0;
+  const ankleY = 200.0;
+
+  return [
+    // Shoulders only 40px apart (side view)
+    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 20, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 20, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, wristX + 20, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
+    _createLandmark(PoseLandmarkType.leftAnkle, ankleX - 20, ankleY),
+    _createLandmark(PoseLandmarkType.rightAnkle, ankleX + 20, ankleY),
+  ];
+}
+
+/// Create a STANDING pose (side view with vertical body orientation).
+/// This should be rejected as "not in plank position".
+List<PoseLandmark> _createStandingPose() {
+  // Side view (shoulders close together) + vertical body orientation
+  // This simulates someone standing up after a workout
+  const shoulderX = 100.0;
+  const shoulderY = 100.0; // Top of body
+  const elbowX = 100.0;
+  const elbowY = 150.0;
+  const wristX = 100.0;
+  const wristY = 200.0; // Arms hanging down
+
+  // Hips directly below shoulders (vertical body)
+  const hipX = 100.0;
+  const hipY = 250.0;
+  const ankleX = 100.0;
+  const ankleY = 400.0;
+
+  return [
+    // Shoulders only 40px apart (side view)
     _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
     _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
     _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),

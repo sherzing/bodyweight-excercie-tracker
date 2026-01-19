@@ -159,6 +159,12 @@ class PushupCounter extends ExerciseCounter {
             _wasDown = false;
             _resetFormTracking();
             return hasGoodOverallForm;
+          } else if (_wasDown) {
+            // Debounce blocked this rep - reset state to prevent phantom reps
+            // from angle fluctuations near the threshold
+            print('[PUSHUP] Rep blocked by debounce - resetting state');
+            _wasDown = false;
+            _resetFormTracking();
           }
         } else if (elbowAngle > downAngleThreshold + angleTolerance) {
           _stage = PushupStage.goingUp;
@@ -185,6 +191,12 @@ class PushupCounter extends ExerciseCounter {
             _wasDown = false;
             _resetFormTracking();
             return hasGoodOverallForm;
+          } else if (_wasDown) {
+            // Debounce blocked this rep - reset state to prevent phantom reps
+            // from angle fluctuations near the threshold
+            print('[PUSHUP] Rep blocked by debounce - resetting state');
+            _wasDown = false;
+            _resetFormTracking();
           }
         } else if (elbowAngle <= downAngleThreshold + angleTolerance) {
           // Went back down

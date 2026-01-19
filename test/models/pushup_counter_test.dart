@@ -288,6 +288,89 @@ void main() {
       });
     });
 
+    group('Debounce Edge Cases', () {
+      test('debounce-blocked rep resets state correctly', () {
+        // This tests that when debounce blocks a rep, the state is properly
+        // reset to prevent any issues with subsequent reps.
+
+        // Complete first rep (valid)
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        // Clear debounce for first rep
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(counter.repCount, equals(1));
+        expect(counter.invalidRepCount, equals(0));
+
+        // Simulate rapid second rep attempt that gets blocked by debounce
+        // User goes down quickly
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+
+        // User comes up immediately (within 300ms debounce window)
+        counter.lastRepTime = DateTime.now(); // Reset to simulate fast timing
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Rep count should NOT have increased (blocked by debounce)
+        expect(counter.repCount, equals(1));
+
+        // After debounce blocked the rep, the state should be cleanly reset
+        // Verify by doing a proper rep
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Should now have 2 valid reps
+        expect(counter.repCount, equals(2));
+        expect(counter.invalidRepCount, equals(0));
+      });
+
+      test('rapid reps blocked by debounce do not accumulate', () {
+        // Complete first rep
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(counter.repCount, equals(1));
+
+        // Try to do 3 rapid reps within debounce window
+        for (var i = 0; i < 3; i++) {
+          counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+          counter.checkRepCompletion();
+          counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+          counter.checkRepCompletion();
+        }
+
+        // All should be blocked by debounce - only original 1 rep counted
+        expect(counter.repCount, equals(1));
+        expect(counter.invalidRepCount, equals(0));
+
+        // Now clear debounce and do a proper rep
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Should have 2 reps total now
+        expect(counter.repCount, equals(2));
+        expect(counter.invalidRepCount, equals(0));
+      });
+    });
+
   });
 }
 

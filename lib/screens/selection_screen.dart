@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../models/workout.dart';
 import '../providers/workout_manager.dart';
 import '../services/permission_service.dart';
+import '../services/database_service.dart';
+import '../services/gamification_service.dart';
 import 'tracking_screen.dart';
 
 class SelectionScreen extends StatefulWidget {
@@ -18,6 +20,42 @@ class _SelectionScreenState extends State<SelectionScreen> {
   WorkoutMode _selectedMode = WorkoutMode.free;
   int _targetValue = 10;
 
+  late final GamificationService _gamification;
+  StreakInfo? _streakInfo;
+  RestDaySuggestion? _restSuggestion;
+  bool _showStreak = true;
+  bool _gamificationEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _gamification = GamificationService(DatabaseService());
+    _loadGamificationData();
+  }
+
+  Future<void> _loadGamificationData() async {
+    final enabled = await _gamification.isGamificationEnabled();
+    final showStreak = await _gamification.shouldShowStreak();
+    if (!enabled) {
+      setState(() {
+        _gamificationEnabled = false;
+      });
+      return;
+    }
+
+    final streakInfo = await _gamification.getCurrentStreak();
+    final restSuggestion = await _gamification.getRestDaySuggestion();
+
+    if (mounted) {
+      setState(() {
+        _gamificationEnabled = enabled;
+        _showStreak = showStreak;
+        _streakInfo = streakInfo;
+        _restSuggestion = restSuggestion;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -31,6 +69,10 @@ class _SelectionScreenState extends State<SelectionScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_gamificationEnabled && _showStreak && _streakInfo != null && _streakInfo!.currentStreak >= 2)
+                _buildStreakBadge(),
+              if (_gamificationEnabled && _restSuggestion != null && _restSuggestion!.suggested)
+                _buildRestSuggestion(),
               _buildSectionTitle('Exercise'),
               const SizedBox(height: 12),
               _buildExerciseSelector(),
@@ -68,6 +110,69 @@ class _SelectionScreenState extends State<SelectionScreen> {
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),
+    );
+  }
+
+  Widget _buildStreakBadge() {
+    final streak = _streakInfo!.currentStreak;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.local_fire_department,
+            color: Colors.orange.shade600,
+            size: 24,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$streak day streak',
+            style: TextStyle(
+              color: Colors.orange.shade700,
+              fontWeight: FontWeight.w500,
+              fontSize: 16,
+            ),
+          ),
+          if (_streakInfo!.graceDayAvailable) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Rest day available - your streak is protected',
+              child: Icon(
+                Icons.shield_outlined,
+                color: Colors.green.shade600,
+                size: 18,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestSuggestion() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.bedtime_outlined, color: Colors.blue.shade600),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Recovery day suggested',
+                style: TextStyle(color: Colors.blue.shade700),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

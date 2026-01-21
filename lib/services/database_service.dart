@@ -5,7 +5,9 @@ import '../models/workout.dart';
 class DatabaseService {
   static Database? _database;
   static const String _tableName = 'workouts';
-  static const int _dbVersion = 1;
+  static const String _preferencesTable = 'user_preferences';
+  static const String _achievementsTable = 'achievements';
+  static const int _dbVersion = 2;
 
   /// Get the database instance, initializing if needed
   Future<Database> get database async {
@@ -45,10 +47,41 @@ class DatabaseService {
     await db.execute('''
       CREATE INDEX idx_started_at ON $_tableName (started_at)
     ''');
+
+    // Create gamification tables
+    await _createGamificationTables(db);
+  }
+
+  Future<void> _createGamificationTables(Database db) async {
+    // User preferences for gamification settings
+    await db.execute('''
+      CREATE TABLE $_preferencesTable (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+
+    // Achievements tracking (milestones, personal bests, streaks)
+    await db.execute('''
+      CREATE TABLE $_achievementsTable (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        achieved_at TEXT NOT NULL,
+        value INTEGER NOT NULL
+      )
+    ''');
+
+    // Create index for achievement type queries
+    await db.execute('''
+      CREATE INDEX idx_achievement_type ON $_achievementsTable (type)
+    ''');
   }
 
   Future<void> _upgradeDatabase(Database db, int oldVersion, int newVersion) async {
-    // Handle future migrations here
+    if (oldVersion < 2) {
+      // Add gamification tables (user_preferences and achievements)
+      await _createGamificationTables(db);
+    }
   }
 
   /// Insert a new workout record
@@ -163,6 +196,106 @@ class DatabaseService {
   Future<int> deleteAllWorkouts() async {
     final db = await database;
     return await db.delete(_tableName);
+  }
+
+  // ==================== User Preferences ====================
+
+  /// Get a user preference value by key
+  Future<String?> getPreference(String key) async {
+    final db = await database;
+    final maps = await db.query(
+      _preferencesTable,
+      where: 'key = ?',
+      whereArgs: [key],
+    );
+    if (maps.isEmpty) return null;
+    return maps.first['value'] as String?;
+  }
+
+  /// Get a boolean preference (defaults to true if not set)
+  Future<bool> getBoolPreference(String key, {bool defaultValue = true}) async {
+    final value = await getPreference(key);
+    if (value == null) return defaultValue;
+    return value == 'true';
+  }
+
+  /// Set a user preference value
+  Future<void> setPreference(String key, String value) async {
+    final db = await database;
+    await db.insert(
+      _preferencesTable,
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Set a boolean preference
+  Future<void> setBoolPreference(String key, bool value) async {
+    await setPreference(key, value.toString());
+  }
+
+  /// Delete a user preference
+  Future<void> deletePreference(String key) async {
+    final db = await database;
+    await db.delete(
+      _preferencesTable,
+      where: 'key = ?',
+      whereArgs: [key],
+    );
+  }
+
+  // ==================== Achievements ====================
+
+  /// Record an achievement
+  Future<void> recordAchievement({
+    required String id,
+    required String type,
+    required int value,
+  }) async {
+    final db = await database;
+    await db.insert(
+      _achievementsTable,
+      {
+        'id': id,
+        'type': type,
+        'achieved_at': DateTime.now().toIso8601String(),
+        'value': value,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore, // Don't overwrite existing
+    );
+  }
+
+  /// Check if an achievement has been earned
+  Future<bool> hasAchievement(String id) async {
+    final db = await database;
+    final maps = await db.query(
+      _achievementsTable,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return maps.isNotEmpty;
+  }
+
+  /// Get all achievements of a specific type
+  Future<List<Achievement>> getAchievementsByType(String type) async {
+    final db = await database;
+    final maps = await db.query(
+      _achievementsTable,
+      where: 'type = ?',
+      whereArgs: [type],
+      orderBy: 'achieved_at DESC',
+    );
+    return maps.map((m) => Achievement.fromMap(m)).toList();
+  }
+
+  /// Get all achievements
+  Future<List<Achievement>> getAllAchievements() async {
+    final db = await database;
+    final maps = await db.query(
+      _achievementsTable,
+      orderBy: 'achieved_at DESC',
+    );
+    return maps.map((m) => Achievement.fromMap(m)).toList();
   }
 
   /// Close the database connection
@@ -291,5 +424,38 @@ class WorkoutStats {
       return '${hours}h ${minutes}m';
     }
     return '${minutes}m';
+  }
+}
+
+/// Represents an earned achievement
+class Achievement {
+  final String id;
+  final String type;
+  final DateTime achievedAt;
+  final int value;
+
+  Achievement({
+    required this.id,
+    required this.type,
+    required this.achievedAt,
+    required this.value,
+  });
+
+  factory Achievement.fromMap(Map<String, dynamic> map) {
+    return Achievement(
+      id: map['id'] as String,
+      type: map['type'] as String,
+      achievedAt: DateTime.parse(map['achieved_at'] as String),
+      value: map['value'] as int,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'type': type,
+      'achieved_at': achievedAt.toIso8601String(),
+      'value': value,
+    };
   }
 }

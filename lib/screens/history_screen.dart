@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/workout.dart';
 import '../services/database_service.dart';
+import '../services/gamification_service.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -13,17 +14,22 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final DatabaseService _db = DatabaseService();
+  late final GamificationService _gamification;
   List<Workout> _workouts = [];
   WorkoutStats? _stats;
   WorkoutStats? _weekStats;
   WorkoutStats? _monthStats;
+  StreakInfo? _streakInfo;
+  MilestoneProgress? _milestoneProgress;
   bool _isLoading = true;
+  bool _gamificationEnabled = true;
   ExerciseType? _filterType;
   int _selectedStatsPeriod = 0; // 0 = All time, 1 = This Week, 2 = This Month
 
   @override
   void initState() {
     super.initState();
+    _gamification = GamificationService(_db);
     _loadData();
   }
 
@@ -38,11 +44,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final weekStats = await _db.getThisWeekStats();
       final monthStats = await _db.getThisMonthStats();
 
+      // Load gamification data
+      final gamificationEnabled = await _gamification.isGamificationEnabled();
+      StreakInfo? streakInfo;
+      MilestoneProgress? milestoneProgress;
+      if (gamificationEnabled) {
+        streakInfo = await _gamification.getCurrentStreak();
+        milestoneProgress = await _gamification.getMilestoneProgress();
+      }
+
       setState(() {
         _workouts = workouts;
         _stats = stats;
         _weekStats = weekStats;
         _monthStats = monthStats;
+        _gamificationEnabled = gamificationEnabled;
+        _streakInfo = streakInfo;
+        _milestoneProgress = milestoneProgress;
         _isLoading = false;
       });
     } catch (e) {
@@ -227,6 +245,45 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   );
                 }).toList(),
               ),
+            ],
+            if (_gamificationEnabled && (_streakInfo != null || _milestoneProgress != null)) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'Achievements',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 12),
+              if (_streakInfo != null) ...[
+                Row(
+                  children: [
+                    Icon(Icons.local_fire_department, color: Colors.orange.shade600, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Current streak: ${_streakInfo!.currentStreak} days'),
+                    const SizedBox(width: 16),
+                    Icon(Icons.star_outline, color: Colors.amber.shade600, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Longest: ${_streakInfo!.longestStreak} days'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (_milestoneProgress != null)
+                Row(
+                  children: [
+                    Icon(Icons.flag_outlined, color: Colors.green.shade600, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Milestones: ${_milestoneProgress!.earnedCount}/${_milestoneProgress!.totalMilestones}'),
+                    if (_milestoneProgress!.nextRepMilestone != null) ...[
+                      const SizedBox(width: 16),
+                      Text(
+                        'Next: ${_milestoneProgress!.nextRepMilestone} reps',
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
             ],
           ],
         ),

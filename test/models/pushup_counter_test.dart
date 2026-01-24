@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:pushup_counter/models/invalid_rep_reason.dart';
 import 'package:pushup_counter/models/pushup_counter.dart';
 
 /// Tests for PushupCounter behavior.
@@ -368,6 +369,170 @@ void main() {
         // Should have 2 reps total now
         expect(counter.repCount, equals(2));
         expect(counter.invalidRepCount, equals(0));
+      });
+    });
+
+    group('Invalid Rep Reasons', () {
+      test('poorForm reason when form ratio is below threshold', () {
+        InvalidRepInfo? receivedInfo;
+        counter.onInvalidRep = (info) {
+          receivedInfo = info;
+        };
+
+        // Start in up position with bad form
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Go to down position with bad form
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 85));
+        counter.checkRepCompletion();
+
+        // Add more frames with bad form to ensure >40% bad
+        for (var i = 0; i < 5; i++) {
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 90));
+          counter.checkRepCompletion();
+        }
+
+        // Clear debounce
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+
+        // Return to up position - should trigger invalid rep with poorForm reason
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(receivedInfo, isNotNull);
+        expect(receivedInfo!.reason, equals(InvalidRepReason.poorForm));
+        expect(counter.lastInvalidRepInfo, isNotNull);
+        expect(counter.lastInvalidRepInfo!.reason, equals(InvalidRepReason.poorForm));
+      });
+
+      test('InvalidRepInfo contains form metrics', () {
+        InvalidRepInfo? receivedInfo;
+        counter.onInvalidRep = (info) {
+          receivedInfo = info;
+        };
+
+        // Complete a rep with bad form
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 85));
+        counter.checkRepCompletion();
+
+        for (var i = 0; i < 3; i++) {
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 90));
+          counter.checkRepCompletion();
+        }
+
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(receivedInfo, isNotNull);
+        expect(receivedInfo!.formRatio, isNotNull);
+        expect(receivedInfo!.formRatio!, lessThan(0.6)); // Form ratio below threshold
+        expect(receivedInfo!.elbowAngle, isNotNull);
+        expect(receivedInfo!.minElbowAngle, isNotNull);
+        expect(receivedInfo!.maxElbowAngle, isNotNull);
+      });
+
+      test('InvalidRepInfo contains duration when available', () {
+        InvalidRepInfo? receivedInfo;
+        counter.onInvalidRep = (info) {
+          receivedInfo = info;
+        };
+
+        // Complete a rep with bad form
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 85));
+        counter.checkRepCompletion();
+
+        for (var i = 0; i < 3; i++) {
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 90));
+          counter.checkRepCompletion();
+        }
+
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(receivedInfo, isNotNull);
+        expect(receivedInfo!.durationMs, isNotNull);
+        expect(receivedInfo!.durationMs!, greaterThan(0));
+      });
+
+      test('InvalidRepInfo tracks min and max elbow angles during rep', () {
+        InvalidRepInfo? receivedInfo;
+        counter.onInvalidRep = (info) {
+          receivedInfo = info;
+        };
+
+        // Start in up position
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Go through various elbow angles
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 120));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 85)); // min
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 100));
+        counter.checkRepCompletion();
+
+        counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+        counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        expect(receivedInfo, isNotNull);
+        expect(receivedInfo!.minElbowAngle, isNotNull);
+        expect(receivedInfo!.maxElbowAngle, isNotNull);
+        // Min should be around 85, max should be around 170
+        expect(receivedInfo!.minElbowAngle!, lessThan(100));
+        expect(receivedInfo!.maxElbowAngle!, greaterThan(150));
+      });
+
+      test('callback receives correct repIndex', () {
+        final receivedInfos = <InvalidRepInfo>[];
+        counter.onInvalidRep = (info) {
+          receivedInfos.add(info);
+        };
+
+        // Complete two invalid reps
+        for (var rep = 0; rep < 2; rep++) {
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+          counter.checkRepCompletion();
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 85));
+          counter.checkRepCompletion();
+
+          for (var i = 0; i < 3; i++) {
+            counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 90));
+            counter.checkRepCompletion();
+          }
+
+          counter.lastRepTime = DateTime.now().subtract(const Duration(milliseconds: 500));
+          counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
+          counter.checkRepCompletion();
+        }
+
+        expect(receivedInfos.length, equals(2));
+        expect(receivedInfos[0].repIndex, equals(0));
+        expect(receivedInfos[1].repIndex, equals(1));
+      });
+
+      test('reset clears tracking state for next rep', () {
+        // Do a partial rep then reset
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+
+        counter.reset();
+
+        // Verify we're back to initial state
+        expect(counter.getCurrentStage(), equals('Up'));
+        expect(counter.repCount, equals(0));
+        expect(counter.invalidRepCount, equals(0));
+        expect(counter.lastInvalidRepInfo, isNull);
       });
     });
 

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:pushup_counter/models/exercise_counter.dart';
+import 'package:pushup_counter/models/invalid_rep_reason.dart';
 import 'package:pushup_counter/models/pushup_counter.dart';
 
 /// Tests for the ExerciseCounter interface contract.
@@ -218,6 +219,78 @@ void main() {
         expect(counter.repCount, equals(1));
         expect(counter.invalidRepCount, equals(1));
       });
+
+      test('stores lastInvalidRepInfo when info is provided', () {
+        final info = InvalidRepInfo(
+          reason: InvalidRepReason.poorForm,
+          timestamp: DateTime.now(),
+          repIndex: 0,
+          elbowAngle: 85.0,
+          bodyDeviation: 35.0,
+          formRatio: 0.4,
+        );
+
+        counter.recordInvalidRep(info);
+
+        expect(counter.lastInvalidRepInfo, isNotNull);
+        expect(counter.lastInvalidRepInfo!.reason, equals(InvalidRepReason.poorForm));
+        expect(counter.lastInvalidRepInfo!.elbowAngle, equals(85.0));
+        expect(counter.lastInvalidRepInfo!.formRatio, equals(0.4));
+      });
+
+      test('does not set lastInvalidRepInfo when called without info', () {
+        counter.recordInvalidRep();
+
+        expect(counter.lastInvalidRepInfo, isNull);
+      });
+
+      test('triggers onInvalidRep callback when info is provided', () {
+        InvalidRepInfo? receivedInfo;
+        counter.onInvalidRep = (info) {
+          receivedInfo = info;
+        };
+
+        final info = InvalidRepInfo(
+          reason: InvalidRepReason.partialRangeDown,
+          timestamp: DateTime.now(),
+          repIndex: 0,
+        );
+
+        counter.recordInvalidRep(info);
+
+        expect(receivedInfo, isNotNull);
+        expect(receivedInfo!.reason, equals(InvalidRepReason.partialRangeDown));
+      });
+
+      test('does not trigger callback when called without info', () {
+        var callbackCalled = false;
+        counter.onInvalidRep = (info) {
+          callbackCalled = true;
+        };
+
+        counter.recordInvalidRep();
+
+        expect(callbackCalled, isFalse);
+      });
+
+      test('updates lastInvalidRepInfo on subsequent calls', () {
+        final info1 = InvalidRepInfo(
+          reason: InvalidRepReason.poorForm,
+          timestamp: DateTime.now(),
+          repIndex: 0,
+        );
+        final info2 = InvalidRepInfo(
+          reason: InvalidRepReason.partialRangeUp,
+          timestamp: DateTime.now(),
+          repIndex: 1,
+        );
+
+        counter.recordInvalidRep(info1);
+        counter.recordInvalidRep(info2);
+
+        expect(counter.lastInvalidRepInfo!.reason, equals(InvalidRepReason.partialRangeUp));
+        expect(counter.lastInvalidRepInfo!.repIndex, equals(1));
+      });
     });
 
     group('reset', () {
@@ -252,6 +325,20 @@ void main() {
         counter.reset();
 
         expect(counter.landmarks, isEmpty);
+      });
+
+      test('clears lastInvalidRepInfo', () {
+        final info = InvalidRepInfo(
+          reason: InvalidRepReason.poorForm,
+          timestamp: DateTime.now(),
+          repIndex: 0,
+        );
+        counter.recordInvalidRep(info);
+        expect(counter.lastInvalidRepInfo, isNotNull);
+
+        counter.reset();
+
+        expect(counter.lastInvalidRepInfo, isNull);
       });
     });
   });

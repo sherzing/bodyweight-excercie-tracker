@@ -17,6 +17,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   late final GamificationService _gamification;
   List<Workout> _workouts = [];
   WorkoutStats? _stats;
+  WorkoutStats? _dayStats;
   WorkoutStats? _weekStats;
   WorkoutStats? _monthStats;
   StreakInfo? _streakInfo;
@@ -24,13 +25,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _isLoading = true;
   bool _gamificationEnabled = true;
   ExerciseType? _filterType;
-  int _selectedStatsPeriod = 0; // 0 = All time, 1 = This Week, 2 = This Month
+  int _selectedStatsPeriod = 0; // 0 = All time, 1 = Day, 2 = Week, 3 = Month
+  DateTime _selectedDay = DateTime.now();
+  late PageController _dayPageController;
 
   @override
   void initState() {
     super.initState();
     _gamification = GamificationService(_db);
+    _dayPageController = PageController(initialPage: 1000);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _dayPageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -41,6 +51,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ? await _db.getAllWorkouts()
           : await _db.getWorkoutsByExercise(_filterType!);
       final stats = await _db.getStats();
+      final dayStats = await _db.getDayStats(_selectedDay);
       final weekStats = await _db.getThisWeekStats();
       final monthStats = await _db.getThisMonthStats();
 
@@ -56,6 +67,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() {
         _workouts = workouts;
         _stats = stats;
+        _dayStats = dayStats;
         _weekStats = weekStats;
         _monthStats = monthStats;
         _gamificationEnabled = gamificationEnabled;
@@ -71,6 +83,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
         );
       }
     }
+  }
+
+  Future<void> _loadDayStats(DateTime date) async {
+    final dayStats = await _db.getDayStats(date);
+    setState(() {
+      _selectedDay = date;
+      _dayStats = dayStats;
+    });
   }
 
   Future<void> _exportData() async {
@@ -143,8 +163,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   WorkoutStats? get _currentStats {
     switch (_selectedStatsPeriod) {
       case 1:
-        return _weekStats;
+        return _dayStats;
       case 2:
+        return _weekStats;
+      case 3:
         return _monthStats;
       default:
         return _stats;
@@ -154,12 +176,87 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String get _currentStatsLabel {
     switch (_selectedStatsPeriod) {
       case 1:
-        return 'This Week';
+        return _formatDayLabel(_selectedDay);
       case 2:
+        return 'This Week';
+      case 3:
         return 'This Month';
       default:
         return 'All Time';
     }
+  }
+
+  String _formatDayLabel(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    final difference = today.difference(dateOnly).inDays;
+
+    if (difference == 0) return 'Today';
+    if (difference == 1) return 'Yesterday';
+    return DateFormat('MMM d').format(date);
+  }
+
+  Widget _buildDaySelector() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        height: 40,
+        child: PageView.builder(
+          controller: _dayPageController,
+          onPageChanged: (page) {
+            final daysAgo = 1000 - page;
+            final selectedDate = DateTime.now().subtract(Duration(days: daysAgo));
+            _loadDayStats(selectedDate);
+          },
+          itemBuilder: (context, index) {
+            final daysAgo = 1000 - index;
+            final date = DateTime.now().subtract(Duration(days: daysAgo));
+            final isSelected = _isSameDay(date, _selectedDay);
+
+            return Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (daysAgo > 0)
+                      Icon(
+                        Icons.chevron_left,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                    Text(
+                      _formatDayLabel(date),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    if (daysAgo < 0 || (daysAgo == 0 && false))
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   Widget _buildStatsHeader() {
@@ -189,8 +286,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 SegmentedButton<int>(
                   segments: const [
                     ButtonSegment(value: 0, label: Text('All')),
-                    ButtonSegment(value: 1, label: Text('Week')),
-                    ButtonSegment(value: 2, label: Text('Month')),
+                    ButtonSegment(value: 1, label: Text('Day')),
+                    ButtonSegment(value: 2, label: Text('Week')),
+                    ButtonSegment(value: 3, label: Text('Month')),
                   ],
                   selected: {_selectedStatsPeriod},
                   onSelectionChanged: (selection) {
@@ -205,6 +303,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ],
             ),
+            if (_selectedStatsPeriod == 1) _buildDaySelector(),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,

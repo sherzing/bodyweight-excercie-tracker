@@ -368,6 +368,13 @@ class DatabaseService {
     return getStatsByDateRange(startOfMonth, endOfMonth);
   }
 
+  /// Get statistics for a specific day
+  Future<WorkoutStats> getDayStats(DateTime date) async {
+    final startOfDay = DateTime(date.year, date.month, date.day);
+    final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
+    return getStatsByDateRange(startOfDay, endOfDay);
+  }
+
   /// Export all workouts as CSV string
   Future<String> exportToCsv() async {
     final workouts = await getAllWorkouts();

@@ -13,6 +13,7 @@ import '../services/pose_detection_service.dart';
 import '../services/training_data_service.dart';
 import '../widgets/pose_painter.dart';
 import '../widgets/rep_flash_overlay.dart';
+import '../widgets/invalid_rep_feedback.dart';
 import '../widgets/celebration_overlay.dart';
 import '../widgets/debug_overlay.dart';
 import '../widgets/guide_lines_overlay.dart';
@@ -34,6 +35,7 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   final FeedbackService _feedback = FeedbackService();
   final TrainingDataService _trainingService = TrainingDataService();
   final GlobalKey<RepFlashOverlayState> _flashKey = GlobalKey();
+  final GlobalKey<InvalidRepFeedbackState> _invalidRepFeedbackKey = GlobalKey();
   bool _isInitializing = true;
   String? _errorMessage;
   bool _workoutSaved = false;
@@ -146,6 +148,11 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
         workoutManager.onInvalidRep = () {
           _feedback.onInvalidRep();
           _flashKey.currentState?.flashInvalid();
+          // Show reason feedback if available
+          final info = workoutManager.lastInvalidRepInfo;
+          if (info != null) {
+            _invalidRepFeedbackKey.currentState?.showFromInfo(info);
+          }
         };
         workoutManager.onWorkoutCompleted = () {
           _feedback.onWorkoutCompleted();
@@ -319,6 +326,17 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
             if (workoutManager.state == WorkoutState.active ||
                 workoutManager.state == WorkoutState.paused)
               _buildWorkoutOverlay(workoutManager),
+
+            // Invalid rep feedback (centered, below rep counter)
+            if (workoutManager.state == WorkoutState.active)
+              Positioned(
+                top: 200, // Below the rep counter area
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: InvalidRepFeedback(key: _invalidRepFeedbackKey),
+                ),
+              ),
 
             // Completion overlay
             if (workoutManager.state == WorkoutState.completed)

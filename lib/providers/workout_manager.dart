@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../models/workout.dart';
 import '../models/exercise_counter.dart';
+import '../models/invalid_rep_reason.dart';
 import '../models/pushup_counter.dart';
 import '../models/burpee_counter.dart';
 import '../services/pose_detection_service.dart';
@@ -48,6 +49,7 @@ class WorkoutManager extends ChangeNotifier {
   int get countdownSeconds => _countdownSeconds;
   int get repCount => _exerciseCounter?.repCount ?? 0;
   int get invalidRepCount => _exerciseCounter?.invalidRepCount ?? 0;
+  InvalidRepInfo? get lastInvalidRepInfo => _exerciseCounter?.lastInvalidRepInfo;
   String get currentStage => _exerciseCounter?.getCurrentStage() ?? '';
   Pose? get currentPose => _currentPose;
   PosePositionFeedback get positionFeedback => _positionFeedback;

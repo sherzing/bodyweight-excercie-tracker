@@ -69,11 +69,15 @@ void main() {
     });
 
     group('Stage Detection', () {
-      test('starts in Up stage', () {
-        expect(counter.getCurrentStage(), equals('Up'));
+      test('starts in Get Ready stage', () {
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
       });
 
       test('detects non-Up stage with bent elbow', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Simulate bent elbow position (90 degrees)
         counter.updateLandmarks(_createPushupPose(elbowAngle: 90));
         counter.checkRepCompletion();
@@ -83,6 +87,9 @@ void main() {
       });
 
       test('stage changes when pose changes', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         final initialStage = counter.getCurrentStage();
 
         // Simulate a pose change
@@ -160,20 +167,25 @@ void main() {
     });
 
     group('Reset', () {
-      test('resets stage to Up', () {
-        // Go to a non-up position
+      test('resets stage to Get Ready', () {
+        // Activate and go to a non-up position
+        _activateCounter(counter);
         counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
         counter.checkRepCompletion();
-        expect(counter.getCurrentStage(), isNot(equals('Up')));
+        expect(counter.getCurrentStage(), isNot(equals('Get Ready')));
 
         counter.reset();
 
-        expect(counter.getCurrentStage(), equals('Up'));
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
       });
     });
 
     group('Complete Rep Cycle', () {
       test('counts valid rep for full up-down-up cycle', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Start in up position
         counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
         counter.checkRepCompletion();
@@ -201,6 +213,9 @@ void main() {
         // so no form frames are tracked. Previously this defaulted to 0% form ratio
         // causing all reps to be invalid. Now it defaults to 100% (valid).
 
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Start in up position (no ankles)
         counter.updateLandmarks(_createPushupPoseWithoutAnkles(elbowAngle: 170));
         counter.checkRepCompletion();
@@ -224,6 +239,9 @@ void main() {
       });
 
       test('counts invalid rep when form is poor throughout', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Start in up position with bad form (hips sagging - high body deviation)
         counter.updateLandmarks(_createPushupPoseWithBadForm(elbowAngle: 170));
         counter.checkRepCompletion();
@@ -250,6 +268,9 @@ void main() {
       });
 
       test('multiple reps counted correctly', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Complete 3 reps
         for (var rep = 0; rep < 3; rep++) {
           // Up position
@@ -294,6 +315,9 @@ void main() {
         // This tests that when debounce blocks a rep, the state is properly
         // reset to prevent any issues with subsequent reps.
 
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Complete first rep (valid)
         counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
         counter.checkRepCompletion();
@@ -335,6 +359,9 @@ void main() {
       });
 
       test('rapid reps blocked by debounce do not accumulate', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Complete first rep
         counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
         counter.checkRepCompletion();
@@ -372,8 +399,99 @@ void main() {
       });
     });
 
+    group('Ready State', () {
+      test('counter starts in ready state and not counting', () {
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
+      });
+
+      test('activate() immediately enables counting', () {
+        expect(counter.isReady, isFalse);
+
+        counter.activate();
+
+        expect(counter.isReady, isTrue);
+        expect(counter.getCurrentStage(), equals('Up'));
+      });
+
+      test('movements before activation do not count reps', () {
+        // Simulate full rep cycle while in ready state
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 85));
+        counter.checkRepCompletion();
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Should not count any reps while in ready state
+        expect(counter.repCount, equals(0));
+        expect(counter.invalidRepCount, equals(0));
+      });
+
+      test('ready state resets timer when elbow angle drops', () {
+        // Start in up position
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+
+        // Move to bent position - should reset ready timer
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 90));
+        counter.checkRepCompletion();
+
+        // Back to up - timer should start fresh
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Still in ready state (timer reset)
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
+      });
+
+      test('reset returns to ready state after activation', () {
+        counter.activate();
+        expect(counter.isReady, isTrue);
+
+        counter.reset();
+
+        expect(counter.isReady, isFalse);
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+      });
+
+      test('invalid pose resets ready timer', () {
+        // Start in up position
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Lose pose (empty landmarks)
+        counter.updateLandmarks([]);
+        counter.checkRepCompletion();
+
+        // Regain pose - timer should start fresh
+        counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
+        counter.checkRepCompletion();
+
+        // Still in ready state
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
+      });
+
+      test('standing position does not trigger ready state', () {
+        // Create a standing pose (vertical body)
+        final standingPose = _createStandingPose();
+        counter.updateLandmarks(standingPose);
+        counter.checkRepCompletion();
+
+        // Should still be in ready state (not in plank)
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
+      });
+    });
+
     group('Invalid Rep Reasons', () {
       test('poorForm reason when form ratio is below threshold', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         InvalidRepInfo? receivedInfo;
         counter.onInvalidRep = (info) {
           receivedInfo = info;
@@ -407,6 +525,9 @@ void main() {
       });
 
       test('InvalidRepInfo contains form metrics', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         InvalidRepInfo? receivedInfo;
         counter.onInvalidRep = (info) {
           receivedInfo = info;
@@ -436,6 +557,9 @@ void main() {
       });
 
       test('InvalidRepInfo contains duration when available', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         InvalidRepInfo? receivedInfo;
         counter.onInvalidRep = (info) {
           receivedInfo = info;
@@ -462,6 +586,9 @@ void main() {
       });
 
       test('InvalidRepInfo tracks min and max elbow angles during rep', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         InvalidRepInfo? receivedInfo;
         counter.onInvalidRep = (info) {
           receivedInfo = info;
@@ -492,6 +619,9 @@ void main() {
       });
 
       test('callback receives correct repIndex', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         final receivedInfos = <InvalidRepInfo>[];
         counter.onInvalidRep = (info) {
           receivedInfos.add(info);
@@ -520,6 +650,9 @@ void main() {
       });
 
       test('reset clears tracking state for next rep', () {
+        // Activate counter (skip ready state)
+        _activateCounter(counter);
+
         // Do a partial rep then reset
         counter.updateLandmarks(_createPushupPose(elbowAngle: 170));
         counter.checkRepCompletion();
@@ -528,8 +661,9 @@ void main() {
 
         counter.reset();
 
-        // Verify we're back to initial state
-        expect(counter.getCurrentStage(), equals('Up'));
+        // Verify we're back to initial state (ready state)
+        expect(counter.getCurrentStage(), equals('Get Ready'));
+        expect(counter.isReady, isFalse);
         expect(counter.repCount, equals(0));
         expect(counter.invalidRepCount, equals(0));
         expect(counter.lastInvalidRepInfo, isNull);
@@ -631,6 +765,43 @@ List<PoseLandmark> _createPushupPoseWithoutAnkles({required double elbowAngle}) 
     _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
     _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
     // NO ANKLES
+  ];
+}
+
+/// Activate the counter by skipping the ready state.
+/// This bypasses the warmup period for tests that focus on rep counting.
+void _activateCounter(PushupCounter counter) {
+  counter.activate();
+}
+
+/// Create a standing pose (vertical body, not in plank position).
+/// This simulates when the user is standing upright.
+List<PoseLandmark> _createStandingPose() {
+  // Standing: body is vertical, shoulder above hip above ankle
+  const shoulderX = 200.0;
+  const shoulderY = 100.0; // Top
+  const hipX = 200.0;
+  const hipY = 300.0; // Middle
+  const ankleX = 200.0;
+  const ankleY = 500.0; // Bottom
+
+  // Arms at sides with straight elbows
+  const elbowX = 180.0;
+  const elbowY = 200.0;
+  const wristX = 180.0;
+  const wristY = 280.0;
+
+  return [
+    _createLandmark(PoseLandmarkType.leftShoulder, shoulderX - 20, shoulderY),
+    _createLandmark(PoseLandmarkType.leftElbow, elbowX - 20, elbowY),
+    _createLandmark(PoseLandmarkType.leftWrist, wristX - 20, wristY),
+    _createLandmark(PoseLandmarkType.rightShoulder, shoulderX + 20, shoulderY),
+    _createLandmark(PoseLandmarkType.rightElbow, elbowX + 20, elbowY),
+    _createLandmark(PoseLandmarkType.rightWrist, wristX + 20, wristY),
+    _createLandmark(PoseLandmarkType.leftHip, hipX - 20, hipY),
+    _createLandmark(PoseLandmarkType.rightHip, hipX + 20, hipY),
+    _createLandmark(PoseLandmarkType.leftAnkle, ankleX - 20, ankleY),
+    _createLandmark(PoseLandmarkType.rightAnkle, ankleX + 20, ankleY),
   ];
 }
 

@@ -4,13 +4,13 @@ import 'invalid_rep_reason.dart';
 import '../utils/angle_utils.dart';
 
 /// Pushup stage in the exercise cycle
-enum PushupStage { up, goingDown, down, goingUp }
+enum PushupStage { ready, up, goingDown, down, goingUp }
 
 /// Tracks pushup reps by monitoring elbow angle transitions.
 /// A complete rep: Up (elbow >= 160°) -> Down (elbow <= 90°) -> Up
 class PushupCounter extends ExerciseCounter {
   /// Current stage in the pushup cycle
-  PushupStage _stage = PushupStage.up;
+  PushupStage _stage = PushupStage.ready;
 
   /// Threshold angles with tolerance
   static const double upAngleThreshold = 160.0; // Elbow angle for "up" position
@@ -19,6 +19,15 @@ class PushupCounter extends ExerciseCounter {
 
   /// Body alignment threshold - increased to 30° to account for normal form variation and detection noise
   static const double maxBodyDeviation = 30.0;
+
+  /// Duration required to hold stable up position before counting starts (ms)
+  static const int readyHoldDurationMs = 500;
+
+  /// Track when user first entered stable up position during ready state
+  DateTime? _readyStartTime;
+
+  /// Whether the counter is ready to count reps (finished warmup)
+  bool _isReady = false;
 
   /// Track if we've seen a valid down position this cycle
   bool _wasDown = false;
@@ -43,6 +52,17 @@ class PushupCounter extends ExerciseCounter {
 
   @override
   String get exerciseName => 'Pushups';
+
+  /// Whether the counter has completed warmup and is actively counting
+  bool get isReady => _isReady;
+
+  /// Skip the ready state and immediately start counting.
+  /// This is primarily for testing purposes.
+  void activate() {
+    _stage = PushupStage.up;
+    _isReady = true;
+    _readyStartTime = null;
+  }
 
   @override
   bool isValidPose() {
@@ -73,6 +93,8 @@ class PushupCounter extends ExerciseCounter {
   @override
   String getCurrentStage() {
     switch (_stage) {
+      case PushupStage.ready:
+        return 'Get Ready';
       case PushupStage.up:
         return 'Up';
       case PushupStage.goingDown:
@@ -88,12 +110,14 @@ class PushupCounter extends ExerciseCounter {
   bool checkRepCompletion() {
     if (!isValidPose()) {
       print('[PUSHUP] Invalid pose - missing landmarks');
+      _readyStartTime = null; // Reset ready timer if pose is lost
       return false;
     }
 
     // Check if person is in horizontal plank position (not standing)
     if (!_isInPlankPosition()) {
       print('[PUSHUP] Not in plank position - likely standing');
+      _readyStartTime = null; // Reset ready timer if not in plank
       return false;
     }
 
@@ -102,7 +126,13 @@ class PushupCounter extends ExerciseCounter {
 
     if (elbowAngle == null) {
       print('[PUSHUP] No elbow angle detected');
+      _readyStartTime = null; // Reset ready timer if no elbow detected
       return false;
+    }
+
+    // Handle ready state - wait for stable up position before counting
+    if (_stage == PushupStage.ready) {
+      return _handleReadyState(elbowAngle);
     }
 
     // Track min/max elbow angles during active rep
@@ -140,6 +170,10 @@ class PushupCounter extends ExerciseCounter {
 
     // State machine for pushup detection
     switch (_stage) {
+      case PushupStage.ready:
+        // Already handled above, but needed for exhaustive switch
+        break;
+
       case PushupStage.up:
         // Looking for transition to down position
         if (elbowAngle <= downAngleThreshold + angleTolerance) {
@@ -332,6 +366,42 @@ class PushupCounter extends ExerciseCounter {
     return isPlank;
   }
 
+  /// Handle the ready state - wait for stable up position before counting
+  /// Returns false (no rep completed during ready state)
+  bool _handleReadyState(double elbowAngle) {
+    final isInUpPosition = elbowAngle >= upAngleThreshold - angleTolerance;
+
+    if (isInUpPosition) {
+      // User is in up position - track how long they've held it
+      if (_readyStartTime == null) {
+        _readyStartTime = DateTime.now();
+        print('[PUSHUP] Ready: Started holding up position');
+      }
+
+      final holdDuration = DateTime.now().difference(_readyStartTime!).inMilliseconds;
+      final remainingMs = readyHoldDurationMs - holdDuration;
+
+      if (holdDuration >= readyHoldDurationMs) {
+        // User has held up position long enough - activate counting
+        _stage = PushupStage.up;
+        _isReady = true;
+        _readyStartTime = null;
+        print('[PUSHUP] Ready: Counter activated! Now counting reps.');
+      } else {
+        print('[PUSHUP] Ready: Hold for ${remainingMs}ms more (${holdDuration}ms / ${readyHoldDurationMs}ms)');
+      }
+    } else {
+      // User moved out of up position - reset timer
+      if (_readyStartTime != null) {
+        print('[PUSHUP] Ready: Position lost, resetting timer');
+        _readyStartTime = null;
+      }
+      print('[PUSHUP] Ready: Waiting for up position (elbow: ${elbowAngle.toStringAsFixed(1)}°, need >= ${upAngleThreshold - angleTolerance}°)');
+    }
+
+    return false; // No rep completed during ready state
+  }
+
   /// Reset form tracking counters for next rep
   void _resetFormTracking() {
     _goodFormFrames = 0;
@@ -383,7 +453,9 @@ class PushupCounter extends ExerciseCounter {
   @override
   void reset() {
     super.reset();
-    _stage = PushupStage.up;
+    _stage = PushupStage.ready;
+    _isReady = false;
+    _readyStartTime = null;
     _wasDown = false;
     _resetFormTracking();
   }

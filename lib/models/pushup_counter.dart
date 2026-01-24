@@ -1,5 +1,6 @@
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'exercise_counter.dart';
+import 'invalid_rep_reason.dart';
 import '../utils/angle_utils.dart';
 
 /// Pushup stage in the exercise cycle
@@ -28,6 +29,17 @@ class PushupCounter extends ExerciseCounter {
 
   /// Minimum percentage of good form frames required for a valid rep
   static const double minGoodFormRatio = 0.6; // 60% of frames must have good form
+
+  /// Track min/max elbow angles during rep for partial range detection
+  double? _minElbowAngle;
+  double? _maxElbowAngle;
+
+  /// Track when rep started for too-fast detection
+  DateTime? _repStartTime;
+
+  /// Thresholds for invalid rep detection
+  static const double partialDownThreshold = 100.0; // Must reach <= this angle
+  static const double partialUpThreshold = 150.0; // Must reach >= this angle at end
 
   @override
   String get exerciseName => 'Pushups';
@@ -93,6 +105,16 @@ class PushupCounter extends ExerciseCounter {
       return false;
     }
 
+    // Track min/max elbow angles during active rep
+    if (_stage != PushupStage.up) {
+      _minElbowAngle = _minElbowAngle == null
+          ? elbowAngle
+          : (elbowAngle < _minElbowAngle! ? elbowAngle : _minElbowAngle);
+      _maxElbowAngle = _maxElbowAngle == null
+          ? elbowAngle
+          : (elbowAngle > _maxElbowAngle! ? elbowAngle : _maxElbowAngle);
+    }
+
     // Check body alignment
     final bodyDeviation = angles['bodyDeviation'];
     // Good form: body deviation is known and within threshold
@@ -122,10 +144,12 @@ class PushupCounter extends ExerciseCounter {
         // Looking for transition to down position
         if (elbowAngle <= downAngleThreshold + angleTolerance) {
           _resetFormTracking(); // Start fresh form tracking for new rep
+          _repStartTime = DateTime.now();
           _stage = PushupStage.down;
           _wasDown = true;
         } else if (elbowAngle < upAngleThreshold - angleTolerance) {
           _resetFormTracking(); // Start fresh form tracking for new rep
+          _repStartTime = DateTime.now();
           _stage = PushupStage.goingDown;
         }
         break;
@@ -153,8 +177,13 @@ class PushupCounter extends ExerciseCounter {
             if (hasGoodOverallForm) {
               recordRep();
             } else {
-              // Poor form throughout rep - count as invalid
-              recordInvalidRep();
+              // Poor form throughout rep - count as invalid with reason
+              final info = _createInvalidRepInfo(
+                elbowAngle: elbowAngle,
+                bodyDeviation: angles['bodyDeviation'],
+                formRatio: repFormRatio,
+              );
+              recordInvalidRep(info);
             }
             _wasDown = false;
             _resetFormTracking();
@@ -186,7 +215,13 @@ class PushupCounter extends ExerciseCounter {
             if (hasGoodOverallForm) {
               recordRep();
             } else {
-              recordInvalidRep();
+              // Poor form throughout rep - count as invalid with reason
+              final info = _createInvalidRepInfo(
+                elbowAngle: elbowAngle,
+                bodyDeviation: angles['bodyDeviation'],
+                formRatio: repFormRatio,
+              );
+              recordInvalidRep(info);
             }
             _wasDown = false;
             _resetFormTracking();
@@ -301,6 +336,48 @@ class PushupCounter extends ExerciseCounter {
   void _resetFormTracking() {
     _goodFormFrames = 0;
     _badFormFrames = 0;
+    _minElbowAngle = null;
+    _maxElbowAngle = null;
+    _repStartTime = null;
+  }
+
+  /// Create InvalidRepInfo with the appropriate reason based on tracked metrics
+  InvalidRepInfo _createInvalidRepInfo({
+    required double elbowAngle,
+    required double? bodyDeviation,
+    required double formRatio,
+  }) {
+    // Determine the primary reason for the invalid rep
+    // Priority: partialRangeDown > partialRangeUp > poorForm
+    InvalidRepReason reason;
+
+    if (_minElbowAngle != null && _minElbowAngle! > partialDownThreshold) {
+      // Never reached low enough position
+      reason = InvalidRepReason.partialRangeDown;
+    } else if (elbowAngle < partialUpThreshold) {
+      // Didn't fully extend at completion
+      reason = InvalidRepReason.partialRangeUp;
+    } else {
+      // Form was poor (body deviation too high)
+      reason = InvalidRepReason.poorForm;
+    }
+
+    // Calculate rep duration if we have start time
+    final durationMs = _repStartTime != null
+        ? DateTime.now().difference(_repStartTime!).inMilliseconds
+        : null;
+
+    return InvalidRepInfo(
+      reason: reason,
+      timestamp: DateTime.now(),
+      repIndex: invalidRepCount, // Current count before increment
+      elbowAngle: elbowAngle,
+      bodyDeviation: bodyDeviation,
+      formRatio: formRatio,
+      durationMs: durationMs,
+      minElbowAngle: _minElbowAngle,
+      maxElbowAngle: _maxElbowAngle,
+    );
   }
 
   @override

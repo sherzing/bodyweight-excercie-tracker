@@ -1,4 +1,5 @@
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'invalid_rep_reason.dart';
 
 /// Abstract base class for all exercise counters.
 /// Each exercise type implements this interface to track reps and validate form.
@@ -20,6 +21,12 @@ abstract class ExerciseCounter {
 
   /// Timestamp of last completed rep
   DateTime? lastRepTime;
+
+  /// Information about the last invalid rep (null if no invalid rep recorded)
+  InvalidRepInfo? lastInvalidRepInfo;
+
+  /// Callback triggered when an invalid rep is recorded
+  void Function(InvalidRepInfo info)? onInvalidRep;
 
   /// Update the current pose landmarks
   void updateLandmarks(List<PoseLandmark> newLandmarks) {
@@ -66,9 +73,14 @@ abstract class ExerciseCounter {
     lastRepTime = DateTime.now();
   }
 
-  /// Record an invalid rep attempt
-  void recordInvalidRep() {
+  /// Record an invalid rep attempt with optional structured reason information.
+  /// When [info] is provided, stores the reason and triggers the callback.
+  void recordInvalidRep([InvalidRepInfo? info]) {
     invalidRepCount++;
+    if (info != null) {
+      lastInvalidRepInfo = info;
+      onInvalidRep?.call(info);
+    }
   }
 
   /// Reset the counter state
@@ -76,6 +88,7 @@ abstract class ExerciseCounter {
     repCount = 0;
     invalidRepCount = 0;
     lastRepTime = null;
+    lastInvalidRepInfo = null;
     landmarks = [];
   }
 

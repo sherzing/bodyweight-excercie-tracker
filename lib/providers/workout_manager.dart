@@ -5,6 +5,7 @@ import '../models/workout.dart';
 import '../models/exercise_counter.dart';
 import '../models/invalid_rep_reason.dart';
 import '../models/pushup_counter.dart';
+import '../models/rep_record.dart';
 import '../models/burpee_counter.dart';
 import '../services/pose_detection_service.dart';
 
@@ -28,6 +29,9 @@ class WorkoutManager extends ChangeNotifier {
   ExerciseCounter? _exerciseCounter;
   Pose? _currentPose;
   PosePositionFeedback _positionFeedback = PosePositionFeedback.noPoseDetected;
+
+  // Rep history tracking
+  final RepHistory _repHistory = RepHistory();
 
   // Timers
   Timer? _workoutTimer;
@@ -55,6 +59,7 @@ class WorkoutManager extends ChangeNotifier {
   PosePositionFeedback get positionFeedback => _positionFeedback;
   Map<String, double> get debugAngles => _exerciseCounter?.getDebugAngles() ?? {};
   bool get isValidPose => _exerciseCounter?.isValidPose() ?? false;
+  RepHistory get repHistory => _repHistory;
 
   /// Configure the workout before starting
   void configure({
@@ -92,6 +97,7 @@ class WorkoutManager extends ChangeNotifier {
     _state = WorkoutState.countdown;
     _countdownSeconds = 3;
     _exerciseCounter?.reset();
+    _repHistory.clear();
     notifyListeners();
 
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -178,6 +184,12 @@ class WorkoutManager extends ChangeNotifier {
         final completed = _exerciseCounter!.checkRepCompletion();
 
         if (completed) {
+          // Record valid rep in history
+          _repHistory.addValidRep(
+            timestamp: DateTime.now(),
+            angles: _exerciseCounter!.getDebugAngles(),
+          );
+
           onRepCompleted?.call();
 
           // Check if rep goal reached
@@ -186,6 +198,12 @@ class WorkoutManager extends ChangeNotifier {
             _completeWorkout();
           }
         } else if (_exerciseCounter!.invalidRepCount > previousInvalidCount) {
+          // Record invalid rep in history
+          final info = _exerciseCounter!.lastInvalidRepInfo;
+          if (info != null) {
+            _repHistory.addInvalidRep(info: info);
+          }
+
           onInvalidRep?.call();
         }
       }
@@ -226,6 +244,7 @@ class WorkoutManager extends ChangeNotifier {
     _remainingSeconds = 0;
     _currentPose = null;
     _exerciseCounter?.reset();
+    _repHistory.clear();
     notifyListeners();
   }
 

@@ -10,23 +10,17 @@ enum PushupStage { ready, up, goingDown, down, goingUp }
 /// A complete rep: Up (elbow >= 160°) -> Down (elbow <= 90°) -> Up
 class PushupCounter extends ExerciseCounter {
   /// Current stage in the pushup cycle
-  PushupStage _stage = PushupStage.ready;
+  PushupStage _stage = PushupStage.up;
 
   /// Threshold angles with tolerance
   static const double upAngleThreshold = 160.0; // Elbow angle for "up" position
-  static const double downAngleThreshold = 90.0; // Elbow angle for "down" position
+  static const double downAngleThreshold = 120.0; // Elbow angle for "down" position (relaxed for camera angles)
   static const double angleTolerance = 10.0; // Tolerance for angle detection
 
   /// Body alignment threshold - increased to 30° to account for normal form variation and detection noise
   static const double maxBodyDeviation = 30.0;
 
-  /// Duration required to hold stable up position before counting starts (ms)
-  static const int readyHoldDurationMs = 500;
-
-  /// Track when user first entered stable up position during ready state
-  DateTime? _readyStartTime;
-
-  /// Whether the counter is ready to count reps (finished warmup)
+  /// Whether the counter is ready to count reps (first cycle completed)
   bool _isReady = false;
 
   /// Track if we've seen a valid down position this cycle
@@ -56,12 +50,11 @@ class PushupCounter extends ExerciseCounter {
   /// Whether the counter has completed warmup and is actively counting
   bool get isReady => _isReady;
 
-  /// Skip the ready state and immediately start counting.
+  /// Skip the first cycle warmup and immediately start counting.
   /// This is primarily for testing purposes.
   void activate() {
     _stage = PushupStage.up;
     _isReady = true;
-    _readyStartTime = null;
   }
 
   @override
@@ -92,17 +85,19 @@ class PushupCounter extends ExerciseCounter {
 
   @override
   String getCurrentStage() {
+    // Show warmup indicator if first cycle hasn't completed
+    final prefix = _isReady ? '' : '(Warmup) ';
     switch (_stage) {
       case PushupStage.ready:
-        return 'Get Ready';
+        return '${prefix}Up'; // Legacy state, treat as Up
       case PushupStage.up:
-        return 'Up';
+        return '${prefix}Up';
       case PushupStage.goingDown:
-        return 'Going Down';
+        return '${prefix}Going Down';
       case PushupStage.down:
-        return 'Down';
+        return '${prefix}Down';
       case PushupStage.goingUp:
-        return 'Going Up';
+        return '${prefix}Going Up';
     }
   }
 
@@ -110,14 +105,20 @@ class PushupCounter extends ExerciseCounter {
   bool checkRepCompletion() {
     if (!isValidPose()) {
       print('[PUSHUP] Invalid pose - missing landmarks');
-      _readyStartTime = null; // Reset ready timer if pose is lost
       return false;
     }
 
     // Check if person is in horizontal plank position (not standing)
     if (!_isInPlankPosition()) {
-      print('[PUSHUP] Not in plank position - likely standing');
-      _readyStartTime = null; // Reset ready timer if not in plank
+      // Reset state when user stands up to prevent stuck cycles
+      if (_stage != PushupStage.up) {
+        print('[PUSHUP] Not in plank position - resetting to up stage');
+        _stage = PushupStage.up;
+        _wasDown = false;
+        _resetFormTracking();
+      } else {
+        print('[PUSHUP] Not in plank position - likely standing');
+      }
       return false;
     }
 
@@ -126,13 +127,7 @@ class PushupCounter extends ExerciseCounter {
 
     if (elbowAngle == null) {
       print('[PUSHUP] No elbow angle detected');
-      _readyStartTime = null; // Reset ready timer if no elbow detected
       return false;
-    }
-
-    // Handle ready state - wait for stable up position before counting
-    if (_stage == PushupStage.ready) {
-      return _handleReadyState(elbowAngle);
     }
 
     // Track min/max elbow angles during active rep
@@ -145,15 +140,21 @@ class PushupCounter extends ExerciseCounter {
           : (elbowAngle > _maxElbowAngle! ? elbowAngle : _maxElbowAngle);
     }
 
-    // Check body alignment
+    // Check body alignment - only if ankles are reliably detected
     final bodyDeviation = angles['bodyDeviation'];
+    final leftAnkle = getLandmark(PoseLandmarkType.leftAnkle);
+    final rightAnkle = getLandmark(PoseLandmarkType.rightAnkle);
+    final hasReliableAnkles = hasConfidence(leftAnkle) || hasConfidence(rightAnkle);
+
     // Good form: body deviation is known and within threshold
     // Bad form: body deviation is known and exceeds threshold (including high values that indicate standing)
+    // Only consider form if ankles are reliably detected
     final hasGoodForm = bodyDeviation != null && bodyDeviation < maxBodyDeviation;
-    final hasBadForm = bodyDeviation != null && bodyDeviation >= maxBodyDeviation;
+    final hasBadForm = hasReliableAnkles && bodyDeviation != null && bodyDeviation >= maxBodyDeviation;
 
     // Track form quality during active rep (goingDown, down, goingUp stages)
-    if (_stage != PushupStage.up && bodyDeviation != null) {
+    // Only track if we have reliable ankle detection - otherwise skip form evaluation
+    if (_stage != PushupStage.up && bodyDeviation != null && hasReliableAnkles) {
       if (hasGoodForm) {
         _goodFormFrames++;
       } else {
@@ -166,12 +167,14 @@ class PushupCounter extends ExerciseCounter {
     final formRatio = totalFrames > 0 ? _goodFormFrames / totalFrames : 1.0;
 
     // Log angles for debugging
-    print('[PUSHUP] Stage: $_stage | Elbow: ${elbowAngle.toStringAsFixed(1)}° | BodyDev: ${bodyDeviation?.toStringAsFixed(1) ?? "N/A"}° | Form: ${(formRatio * 100).toInt()}% good (${_goodFormFrames}/${totalFrames})');
+    final ankleStatus = hasReliableAnkles ? 'OK' : 'NO';
+    print('[PUSHUP] Stage: $_stage | Elbow: ${elbowAngle.toStringAsFixed(1)}° | BodyDev: ${bodyDeviation?.toStringAsFixed(1) ?? "N/A"}° | Ankles: $ankleStatus | Form: ${(formRatio * 100).toInt()}% good (${_goodFormFrames}/${totalFrames})');
 
     // State machine for pushup detection
     switch (_stage) {
       case PushupStage.ready:
-        // Already handled above, but needed for exhaustive switch
+        // Legacy state - should not be reached, transition to up
+        _stage = PushupStage.up;
         break;
 
       case PushupStage.up:
@@ -200,28 +203,26 @@ class PushupCounter extends ExerciseCounter {
         if (elbowAngle >= upAngleThreshold - angleTolerance) {
           _stage = PushupStage.up;
           if (_wasDown && canCountRep()) {
-            // Check form quality over the entire rep cycle
-            // Default to 1.0 (valid) if no frames were tracked (e.g., ankles not visible)
+            // First cycle is skipped (warmup/getting into position)
+            if (!_isReady) {
+              print('[PUSHUP] First cycle complete - counter now ready (not counted)');
+              _isReady = true;
+              _wasDown = false;
+              _resetFormTracking();
+              return false;
+            }
+
+            // Log form quality for debugging (but don't use it to reject reps)
+            // Form validation disabled due to noisy pose detection causing false rejections
             final repTotalFrames = _goodFormFrames + _badFormFrames;
             final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 1.0;
-            final hasGoodOverallForm = repFormRatio >= minGoodFormRatio;
 
-            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) frames=$repTotalFrames - ${hasGoodOverallForm ? "VALID" : "INVALID"}');
+            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% frames=$repTotalFrames - VALID');
 
-            if (hasGoodOverallForm) {
-              recordRep();
-            } else {
-              // Poor form throughout rep - count as invalid with reason
-              final info = _createInvalidRepInfo(
-                elbowAngle: elbowAngle,
-                bodyDeviation: angles['bodyDeviation'],
-                formRatio: repFormRatio,
-              );
-              recordInvalidRep(info);
-            }
+            recordRep();
             _wasDown = false;
             _resetFormTracking();
-            return hasGoodOverallForm;
+            return true;
           } else if (_wasDown) {
             // Debounce blocked this rep - reset state to prevent phantom reps
             // from angle fluctuations near the threshold
@@ -238,28 +239,26 @@ class PushupCounter extends ExerciseCounter {
         if (elbowAngle >= upAngleThreshold - angleTolerance) {
           _stage = PushupStage.up;
           if (_wasDown && canCountRep()) {
-            // Check form quality over the entire rep cycle
-            // Default to 1.0 (valid) if no frames were tracked (e.g., ankles not visible)
+            // First cycle is skipped (warmup/getting into position)
+            if (!_isReady) {
+              print('[PUSHUP] First cycle complete - counter now ready (not counted)');
+              _isReady = true;
+              _wasDown = false;
+              _resetFormTracking();
+              return false;
+            }
+
+            // Log form quality for debugging (but don't use it to reject reps)
+            // Form validation disabled due to noisy pose detection causing false rejections
             final repTotalFrames = _goodFormFrames + _badFormFrames;
             final repFormRatio = repTotalFrames > 0 ? _goodFormFrames / repTotalFrames : 1.0;
-            final hasGoodOverallForm = repFormRatio >= minGoodFormRatio;
 
-            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% (need ${(minGoodFormRatio * 100).toInt()}%) - ${hasGoodOverallForm ? "VALID" : "INVALID"}');
+            print('[PUSHUP] Rep complete! Form ratio: ${(repFormRatio * 100).toInt()}% frames=$repTotalFrames - VALID');
 
-            if (hasGoodOverallForm) {
-              recordRep();
-            } else {
-              // Poor form throughout rep - count as invalid with reason
-              final info = _createInvalidRepInfo(
-                elbowAngle: elbowAngle,
-                bodyDeviation: angles['bodyDeviation'],
-                formRatio: repFormRatio,
-              );
-              recordInvalidRep(info);
-            }
+            recordRep();
             _wasDown = false;
             _resetFormTracking();
-            return hasGoodOverallForm;
+            return true;
           } else if (_wasDown) {
             // Debounce blocked this rep - reset state to prevent phantom reps
             // from angle fluctuations near the threshold
@@ -366,42 +365,6 @@ class PushupCounter extends ExerciseCounter {
     return isPlank;
   }
 
-  /// Handle the ready state - wait for stable up position before counting
-  /// Returns false (no rep completed during ready state)
-  bool _handleReadyState(double elbowAngle) {
-    final isInUpPosition = elbowAngle >= upAngleThreshold - angleTolerance;
-
-    if (isInUpPosition) {
-      // User is in up position - track how long they've held it
-      if (_readyStartTime == null) {
-        _readyStartTime = DateTime.now();
-        print('[PUSHUP] Ready: Started holding up position');
-      }
-
-      final holdDuration = DateTime.now().difference(_readyStartTime!).inMilliseconds;
-      final remainingMs = readyHoldDurationMs - holdDuration;
-
-      if (holdDuration >= readyHoldDurationMs) {
-        // User has held up position long enough - activate counting
-        _stage = PushupStage.up;
-        _isReady = true;
-        _readyStartTime = null;
-        print('[PUSHUP] Ready: Counter activated! Now counting reps.');
-      } else {
-        print('[PUSHUP] Ready: Hold for ${remainingMs}ms more (${holdDuration}ms / ${readyHoldDurationMs}ms)');
-      }
-    } else {
-      // User moved out of up position - reset timer
-      if (_readyStartTime != null) {
-        print('[PUSHUP] Ready: Position lost, resetting timer');
-        _readyStartTime = null;
-      }
-      print('[PUSHUP] Ready: Waiting for up position (elbow: ${elbowAngle.toStringAsFixed(1)}°, need >= ${upAngleThreshold - angleTolerance}°)');
-    }
-
-    return false; // No rep completed during ready state
-  }
-
   /// Reset form tracking counters for next rep
   void _resetFormTracking() {
     _goodFormFrames = 0;
@@ -453,9 +416,8 @@ class PushupCounter extends ExerciseCounter {
   @override
   void reset() {
     super.reset();
-    _stage = PushupStage.ready;
+    _stage = PushupStage.up;
     _isReady = false;
-    _readyStartTime = null;
     _wasDown = false;
     _resetFormTracking();
   }

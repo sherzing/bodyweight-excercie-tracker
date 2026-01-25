@@ -128,11 +128,41 @@ Query patterns needed:
 
 ## Form Validation Rules
 
-### Pushup Validation
-- Elbow angle ≤90° (±10° tolerance) = Down position
-- Elbow angle ≥160° (±10° tolerance) = Up position
-- Body alignment: shoulder-hip-ankle deviation must be <15°
-- Rep = Complete Up → Down → Up cycle
+### Pushup Validation (Current Working Settings)
+
+**Angle Thresholds:**
+- `upAngleThreshold`: 160° - Elbow angle for "up" position
+- `downAngleThreshold`: 120° - Elbow angle for "down" position (relaxed from 90° to account for camera angles)
+- `angleTolerance`: 10° - Tolerance for angle detection
+- `maxBodyDeviation`: 30° - Maximum shoulder-hip-ankle deviation for good form
+
+**State Machine:** `up` → `goingDown` → `down` → `goingUp` → `up`
+- Transition to `down`: elbow ≤ 130° (downAngleThreshold + tolerance)
+- Transition to `up`: elbow ≥ 150° (upAngleThreshold - tolerance)
+- Rep counted when completing full cycle back to `up`
+
+**Warmup/First Cycle Skip:**
+- Counter starts with `_isReady = false`
+- First complete cycle sets `_isReady = true` but doesn't count as a rep
+- This prevents phantom reps when user gets into position
+- Stage shows "(Warmup)" prefix until first cycle completes
+- Use `activate()` method to skip warmup (for testing)
+
+**Plank Position Detection:**
+- Checks if body is horizontal (not standing upright)
+- Ratio of vertical to horizontal distance between shoulder and hip
+- If ratio > 2.0, user is likely standing → returns false
+- **Important:** When user exits plank position, state machine resets to `up` stage to prevent stuck cycles
+
+**Form Validation (Currently Disabled):**
+- Form ratio tracking code exists but doesn't reject reps
+- Disabled due to noisy pose detection causing false rejections
+- Body deviation is logged but all completed angle cycles count as valid reps
+- To re-enable: restore `hasGoodOverallForm` check in `checkRepCompletion()`
+
+**Debounce:**
+- `minRepIntervalMs`: 300ms minimum between reps
+- Prevents false positives from rapid angle fluctuations
 
 ### Burpee Validation (4-state machine)
 1. **Standing**: Hip angle >160°
@@ -187,7 +217,14 @@ All audio must be toggleable for accessibility.
 
 When testing exercise counters:
 - Use recorded pose data streams to test state transitions
-- Verify angle thresholds with edge cases (exactly 90°, 89°, 91°)
+- Verify angle thresholds with edge cases (exactly at threshold, ±1°)
 - Test rapid pose changes to catch debouncing issues
 - Validate invalid rep detection with intentional form breaks
 - Test all burpee variants (Standard/Modified) separately
+
+### Pushup Counter Specific Tests
+- **Warmup behavior**: First cycle should set `isReady=true` but not count
+- **State reset on standing**: Exiting plank position should reset to `up` stage
+- **Plank detection**: Verify horizontal vs vertical body orientation detection
+- **Threshold values**: Test with current thresholds (down=120°, up=160°, tolerance=10°)
+- **Debounce**: Verify 300ms minimum between reps

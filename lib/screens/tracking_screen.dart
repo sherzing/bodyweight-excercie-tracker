@@ -43,13 +43,13 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   bool _debugMode = false; // Hidden by default, persisted via SharedPreferences
   bool _guideLinesVisible = true; // Visible by default to help new users
   String _lastCapturedStage = ''; // Track last stage to avoid duplicate captures
+  WorkoutState? _lastWorkoutState; // Track state for wakelock control
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _lockOrientation();
-    _enableWakelock();
     _initializeServices();
   }
 
@@ -61,6 +61,23 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
   /// Allow screen to sleep again
   Future<void> _disableWakelock() async {
     await WakelockPlus.disable();
+  }
+
+  /// Update wakelock based on workout state
+  /// Only keep screen awake when workout is actively in progress
+  void _updateWakelockForState(WorkoutState state) {
+    if (state == _lastWorkoutState) return;
+
+    final wasActive = _lastWorkoutState == WorkoutState.active;
+    final isActive = state == WorkoutState.active;
+
+    if (isActive && !wasActive) {
+      _enableWakelock();
+    } else if (!isActive && wasActive) {
+      _disableWakelock();
+    }
+
+    _lastWorkoutState = state;
   }
 
   /// Lock orientation to current orientation during workout
@@ -295,6 +312,9 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
       builder: (context, workoutManager, child) {
         // Capture training data on stage changes
         _captureTrainingDataIfNeeded(workoutManager);
+
+        // Control wakelock based on workout state
+        _updateWakelockForState(workoutManager.state);
 
         return Stack(
           fit: StackFit.expand,

@@ -1,6 +1,7 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/invalid_rep_reason.dart';
 
 /// Service for audio and haptic feedback during workouts.
 ///
@@ -92,6 +93,59 @@ class FeedbackService {
   void onInvalidRep() {
     if (_hapticEnabled) {
       HapticFeedback.heavyImpact();
+    }
+    if (_audioEnabled) {
+      _playSound(_invalidRepPlayer);
+    }
+  }
+
+  /// Play feedback for an invalid rep with reason-specific haptic pattern
+  ///
+  /// Different haptic patterns help users identify the issue:
+  /// - poorForm: Double heavy impact (body alignment issue)
+  /// - partialRangeDown: Triple light impact (didn't go low enough)
+  /// - partialRangeUp: Triple medium impact (didn't extend fully)
+  /// - tooFast: Vibrate pattern (slow down)
+  /// - poseLost: Single heavy impact (standard)
+  void onInvalidRepWithReason(InvalidRepReason reason) {
+    if (_hapticEnabled) {
+      switch (reason) {
+        case InvalidRepReason.poorForm:
+          // Double heavy impact for form issues
+          HapticFeedback.heavyImpact();
+          Future.delayed(const Duration(milliseconds: 80), () {
+            HapticFeedback.heavyImpact();
+          });
+          break;
+        case InvalidRepReason.partialRangeDown:
+          // Triple light impact - "go lower"
+          HapticFeedback.lightImpact();
+          Future.delayed(const Duration(milliseconds: 60), () {
+            HapticFeedback.lightImpact();
+          });
+          Future.delayed(const Duration(milliseconds: 120), () {
+            HapticFeedback.lightImpact();
+          });
+          break;
+        case InvalidRepReason.partialRangeUp:
+          // Triple medium impact - "extend more"
+          HapticFeedback.mediumImpact();
+          Future.delayed(const Duration(milliseconds: 60), () {
+            HapticFeedback.mediumImpact();
+          });
+          Future.delayed(const Duration(milliseconds: 120), () {
+            HapticFeedback.mediumImpact();
+          });
+          break;
+        case InvalidRepReason.tooFast:
+          // Vibrate for "slow down"
+          HapticFeedback.vibrate();
+          break;
+        case InvalidRepReason.poseLost:
+          // Single heavy impact (standard)
+          HapticFeedback.heavyImpact();
+          break;
+      }
     }
     if (_audioEnabled) {
       _playSound(_invalidRepPlayer);

@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pushup_counter/models/invalid_rep_reason.dart';
 import 'package:pushup_counter/services/feedback_service.dart';
 
 /// Tests for FeedbackService.
@@ -212,6 +213,41 @@ void main() {
 
       test('onTimerWarning can be called without error', () {
         expect(() => service.onTimerWarning(), returnsNormally);
+      });
+
+      test('onInvalidRepWithReason can be called for poorForm', () {
+        expect(
+          () => service.onInvalidRepWithReason(InvalidRepReason.poorForm),
+          returnsNormally,
+        );
+      });
+
+      test('onInvalidRepWithReason can be called for partialRangeDown', () {
+        expect(
+          () => service.onInvalidRepWithReason(InvalidRepReason.partialRangeDown),
+          returnsNormally,
+        );
+      });
+
+      test('onInvalidRepWithReason can be called for partialRangeUp', () {
+        expect(
+          () => service.onInvalidRepWithReason(InvalidRepReason.partialRangeUp),
+          returnsNormally,
+        );
+      });
+
+      test('onInvalidRepWithReason can be called for tooFast', () {
+        expect(
+          () => service.onInvalidRepWithReason(InvalidRepReason.tooFast),
+          returnsNormally,
+        );
+      });
+
+      test('onInvalidRepWithReason can be called for poseLost', () {
+        expect(
+          () => service.onInvalidRepWithReason(InvalidRepReason.poseLost),
+          returnsNormally,
+        );
       });
     });
 

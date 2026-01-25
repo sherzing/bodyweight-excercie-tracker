@@ -163,12 +163,14 @@ class _TrackingScreenState extends State<TrackingScreen> with WidgetsBindingObse
           _flashKey.currentState?.flashValid();
         };
         workoutManager.onInvalidRep = () {
-          _feedback.onInvalidRep();
           _flashKey.currentState?.flashInvalid();
-          // Show reason feedback if available
+          // Show reason-specific feedback if available
           final info = workoutManager.lastInvalidRepInfo;
           if (info != null) {
+            _feedback.onInvalidRepWithReason(info.reason);
             _invalidRepFeedbackKey.currentState?.showFromInfo(info);
+          } else {
+            _feedback.onInvalidRep();
           }
         };
         workoutManager.onWorkoutCompleted = () {
